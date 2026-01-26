@@ -1,0 +1,26 @@
+{
+  "name": "@tuesdaytrust/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint app components lib --max-warnings=0",
+    "test": "vitest run --config vitest.config.ts",
+    "test:coverage": "vitest run --config vitest.config.ts --coverage",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "@headlessui/react": "^2.1.2",
+    "@supabase/supabase-js": "^2.45.1",
+    "@tuesdaytrust/shared": "workspace:*",
+    "@tuesdaytrust/ui": "workspace:*",
+    "next": "^14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
