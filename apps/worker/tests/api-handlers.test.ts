@@ -3,8 +3,19 @@ import { createHandlers } from "../../../supabase/functions/api/handlers"
 
 type TableRow = Record<string, unknown>
 
+function toComparable(value: unknown) {
+  if (typeof value === "number") return value
+  if (typeof value === "string") {
+    const parsed = Date.parse(value)
+    if (!Number.isNaN(parsed)) return parsed
+    return Number(value)
+  }
+  if (value instanceof Date) return value.getTime()
+  return Number(value ?? 0)
+}
+
 class QueryBuilder {
-  private filters: Array<{ type: "eq" | "in"; column: string; value: unknown }> = []
+  private filters: Array<{ type: "eq" | "in" | "gte" | "lt"; column: string; value: unknown }> = []
   private pendingInsert: TableRow[] | null = null
   private pendingUpdate: TableRow | null = null
   private pendingDelete = false
@@ -29,6 +40,16 @@ class QueryBuilder {
 
   in(column: string, value: unknown[]) {
     this.filters.push({ type: "in", column, value })
+    return this
+  }
+
+  gte(column: string, value: unknown) {
+    this.filters.push({ type: "gte", column, value })
+    return this
+  }
+
+  lt(column: string, value: unknown) {
+    this.filters.push({ type: "lt", column, value })
     return this
   }
 
@@ -62,6 +83,12 @@ class QueryBuilder {
       this.filters.every((filter) => {
         if (filter.type === "eq") {
           return row[filter.column] === filter.value
+        }
+        if (filter.type === "gte") {
+          return toComparable(row[filter.column]) >= toComparable(filter.value)
+        }
+        if (filter.type === "lt") {
+          return toComparable(row[filter.column]) < toComparable(filter.value)
         }
         return Array.isArray(filter.value)
           ? filter.value.includes(row[filter.column] as string)
@@ -1136,7 +1163,9 @@ describe("edge handlers", () => {
       supabase: new SupabaseStub({
         org_memberships: [{ id: "mem-1", org_id: orgId, user_id: "user-1", role: "ADMIN" }],
         org_limits: [{ id: "lim-1", org_id: orgId, monthly_token_budget: 1000 }],
-        org_usage: [{ id: "usage-1", org_id: orgId, period_start: "2026-01-01", tokens_in: 100, tokens_out: 50 }]
+        token_usage_events: [
+          { id: "evt-1", org_id: orgId, tokens_in: 100, tokens_out: 50, created_at: "2026-01-10T00:00:00Z" }
+        ]
       }),
       qstash: { url: "", token: "" },
       now: () => new Date("2026-01-15T00:00:00Z")

@@ -66,6 +66,8 @@ Permission highlights:
 - Share links are token-based, revocable, and expiring.
 - Public access is limited to the shared snapshot only.
 - Evidence exposed via share links must be marked `shareable`.
+- Allowlists must explicitly control which answers/evidence are visible publicly.
+- Access requests are logged and require Admin approval before expanding exposure.
 
 ---
 

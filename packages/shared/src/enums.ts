@@ -34,6 +34,7 @@ export type QuestionnaireStatus =
 export const JobType = {
   PROCESS_QUESTIONNAIRE: "PROCESS_QUESTIONNAIRE",
   EXPORT_QUESTIONNAIRE: "EXPORT_QUESTIONNAIRE",
+  EXPORT_REPORT: "EXPORT_REPORT",
   REINDEX_ANSWERS: "REINDEX_ANSWERS",
   DEDUPE_ANSWERS: "DEDUPE_ANSWERS"
 } as const
@@ -49,6 +50,23 @@ export const JobStatus = {
 } as const
 
 export type JobStatus = (typeof JobStatus)[keyof typeof JobStatus]
+
+export const AccessRequestStatus = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  DENIED: "DENIED"
+} as const
+
+export type AccessRequestStatus =
+  (typeof AccessRequestStatus)[keyof typeof AccessRequestStatus]
+
+export const ReportExportFormat = {
+  CSV: "csv",
+  PDF: "pdf"
+} as const
+
+export type ReportExportFormat =
+  (typeof ReportExportFormat)[keyof typeof ReportExportFormat]
 
 export const ConfidenceBucket = {
   AUTO_FILL: "AUTO_FILL",

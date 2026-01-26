@@ -4,7 +4,10 @@ import type {
   Job,
   JobAttempt,
   Questionnaire,
-  QuestionnaireFile
+  QuestionnaireFile,
+  ReportExport,
+  Suggestion,
+  TokenUsageEvent
 } from "@tuesdaytrust/shared"
 import type {
   AuditEventInput,
@@ -12,7 +15,15 @@ import type {
   ExportFileInput,
   JobAttemptInput,
   NewQuestion,
-  NewSuggestion
+  NewSuggestion,
+  OrgAnswerRow,
+  OrgQuestionnaireRow,
+  OrgSuggestionRow,
+  OrgWorkspace,
+  ReportExportFileInput,
+  ReportExportInput,
+  ReportExportUpdate,
+  TokenUsageInput
 } from "./types"
 import type { OrgLimits, OrgUsage } from "./types"
 
@@ -198,20 +209,29 @@ export class SupabaseDataStore implements DataStore {
   }
 
   async getOrgUsage(orgId: string, periodStart: string) {
+    const periodStartDate = new Date(`${periodStart}T00:00:00.000Z`)
+    const periodEndDate = new Date(Date.UTC(periodStartDate.getUTCFullYear(), periodStartDate.getUTCMonth() + 1, 1))
     const { data } = await this.client
-      .from("org_usage")
-      .select("*")
+      .from("token_usage_events")
+      .select("tokens_in, tokens_out")
       .eq("org_id", orgId)
-      .eq("period_start", periodStart)
-      .maybeSingle()
+      .gte("created_at", periodStartDate.toISOString())
+      .lt("created_at", periodEndDate.toISOString())
 
-    if (!data) return null
+    const tokensIn = (data ?? []).reduce(
+      (sum: number, row: { tokens_in?: number }) => sum + (row.tokens_in ?? 0),
+      0
+    )
+    const tokensOut = (data ?? []).reduce(
+      (sum: number, row: { tokens_out?: number }) => sum + (row.tokens_out ?? 0),
+      0
+    )
 
     return {
-      orgId: data.org_id,
-      periodStart: data.period_start,
-      tokensIn: data.tokens_in ?? 0,
-      tokensOut: data.tokens_out ?? 0
+      orgId,
+      periodStart,
+      tokensIn,
+      tokensOut
     } satisfies OrgUsage
   }
 
@@ -239,6 +259,169 @@ export class SupabaseDataStore implements DataStore {
       })
   }
 
+  async createReportExport(input: ReportExportInput) {
+    const { data, error } = await this.client
+      .from("report_exports")
+      .insert({
+        org_id: input.orgId,
+        workspace_id: input.workspaceId ?? null,
+        job_id: input.jobId ?? null,
+        format: input.format,
+        status: "QUEUED",
+        created_by: input.createdBy
+      })
+      .select("*")
+      .single()
+
+    if (error) {
+      throw new Error(`failed to create report export: ${error.message}`)
+    }
+
+    return this.mapReportExport(data)
+  }
+
+  async updateReportExport(id: string, update: ReportExportUpdate) {
+    const { data, error } = await this.client
+      .from("report_exports")
+      .update({
+        status: update.status,
+        storage_bucket: update.storageBucket ?? undefined,
+        storage_path: update.storagePath ?? undefined,
+        file_name: update.fileName ?? undefined,
+        mime_type: update.mimeType ?? undefined,
+        size_bytes: update.sizeBytes ?? undefined,
+        checksum_sha256: update.checksumSha256 ?? undefined,
+        expires_at: update.expiresAt ?? undefined,
+        completed_at: update.completedAt ?? undefined,
+        last_error: update.lastError ?? undefined,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", id)
+      .select("*")
+      .maybeSingle()
+
+    if (error) {
+      throw new Error(`failed to update report export: ${error.message}`)
+    }
+
+    return data ? this.mapReportExport(data) : null
+  }
+
+  async getReportExport(id: string) {
+    const { data } = await this.client.from("report_exports").select("*").eq("id", id).maybeSingle()
+    return data ? this.mapReportExport(data) : null
+  }
+
+  async storeReportExportFile(input: ReportExportFileInput) {
+    const { data: storageData, error: storageError } = await this.client.storage
+      .from(input.storageBucket)
+      .upload(input.storagePath, input.content, {
+        contentType: input.mimeType,
+        upsert: true
+      })
+
+    if (storageError) {
+      throw new Error(`storage upload failed: ${storageError.message}`)
+    }
+
+    const { data, error } = await this.client
+      .from("report_exports")
+      .update({
+        storage_bucket: input.storageBucket,
+        storage_path: storageData?.path ?? input.storagePath,
+        file_name: input.fileName,
+        mime_type: input.mimeType,
+        size_bytes: input.sizeBytes,
+        checksum_sha256: input.checksumSha256,
+        expires_at: input.expiresAt ?? null,
+        status: "SUCCEEDED",
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", input.reportExportId)
+      .select("*")
+      .single()
+
+    if (error) {
+      throw new Error(`failed to update report export: ${error.message}`)
+    }
+
+    return this.mapReportExport(data)
+  }
+
+  async listOrgWorkspaces(orgId: string) {
+    const { data } = await this.client
+      .from("workspaces")
+      .select("id, name")
+      .eq("org_id", orgId)
+      .order("name", { ascending: true })
+    return (data ?? []).map((row: { id: string; name: string }) => ({
+      id: row.id,
+      name: row.name ?? "Workspace"
+    })) satisfies OrgWorkspace[]
+  }
+
+  async listOrgQuestionnaires(orgId: string) {
+    const { data } = await this.client
+      .from("questionnaires")
+      .select("workspace_id, status, updated_at")
+      .eq("org_id", orgId)
+    return (data ?? []).map((row: { workspace_id: string; status: Questionnaire["status"]; updated_at?: string | null }) => ({
+      workspaceId: row.workspace_id,
+      status: row.status,
+      updatedAt: row.updated_at ?? null
+    })) satisfies OrgQuestionnaireRow[]
+  }
+
+  async listOrgSuggestions(orgId: string) {
+    const { data } = await this.client
+      .from("suggestions")
+      .select("workspace_id, confidence_bucket")
+      .eq("org_id", orgId)
+    return (data ?? []).map((row: { workspace_id: string; confidence_bucket: Suggestion["confidenceBucket"] }) => ({
+      workspaceId: row.workspace_id,
+      confidenceBucket: row.confidence_bucket
+    })) satisfies OrgSuggestionRow[]
+  }
+
+  async listOrgApprovedAnswers(orgId: string) {
+    const { data } = await this.client
+      .from("answers")
+      .select("workspace_id, status")
+      .eq("org_id", orgId)
+      .eq("status", "APPROVED")
+    return (data ?? []).map((row: { workspace_id: string; status: Answer["status"] }) => ({
+      workspaceId: row.workspace_id,
+      status: row.status
+    })) satisfies OrgAnswerRow[]
+  }
+
+  async recordTokenUsage(event: TokenUsageInput) {
+    const { data, error } = await this.client
+      .from("token_usage_events")
+      .insert({
+        org_id: event.orgId,
+        workspace_id: event.workspaceId ?? null,
+        job_id: event.jobId ?? null,
+        questionnaire_id: event.questionnaireId ?? null,
+        event_type: event.eventType,
+        provider: event.provider ?? null,
+        model: event.model ?? null,
+        tokens_in: event.tokensIn ?? 0,
+        tokens_out: event.tokensOut ?? 0,
+        cost_usd: event.costUsd ?? 0,
+        metadata: event.metadata ?? {}
+      })
+      .select("*")
+      .single()
+
+    if (error) {
+      throw new Error(`failed to record token usage: ${error.message}`)
+    }
+
+    return this.mapTokenUsageEvent(data)
+  }
+
   async updateJobStatus(jobId: string, status: Job["status"], error?: string | null) {
     await this.client
       .from("jobs")
@@ -249,5 +432,46 @@ export class SupabaseDataStore implements DataStore {
   async getJob(jobId: string) {
     const { data } = await this.client.from("jobs").select("*").eq("id", jobId).single()
     return (data as Job) ?? null
+  }
+
+  private mapReportExport(row: Record<string, unknown>) {
+    return {
+      id: row.id as string,
+      orgId: row.org_id as string,
+      workspaceId: (row.workspace_id as string | null) ?? null,
+      jobId: (row.job_id as string | null) ?? null,
+      format: row.format as ReportExport["format"],
+      status: row.status as ReportExport["status"],
+      storageBucket: (row.storage_bucket as string | null) ?? null,
+      storagePath: (row.storage_path as string | null) ?? null,
+      fileName: (row.file_name as string | null) ?? null,
+      mimeType: (row.mime_type as string | null) ?? null,
+      sizeBytes: (row.size_bytes as number | null) ?? null,
+      checksumSha256: (row.checksum_sha256 as string | null) ?? null,
+      expiresAt: (row.expires_at as string | null) ?? null,
+      createdBy: row.created_by as string,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      completedAt: (row.completed_at as string | null) ?? null,
+      lastError: (row.last_error as string | null) ?? null
+    } satisfies ReportExport
+  }
+
+  private mapTokenUsageEvent(row: Record<string, unknown>) {
+    return {
+      id: row.id as string,
+      orgId: row.org_id as string,
+      workspaceId: (row.workspace_id as string | null) ?? null,
+      jobId: (row.job_id as string | null) ?? null,
+      questionnaireId: (row.questionnaire_id as string | null) ?? null,
+      eventType: row.event_type as string,
+      provider: (row.provider as string | null) ?? null,
+      model: (row.model as string | null) ?? null,
+      tokensIn: Number(row.tokens_in ?? 0),
+      tokensOut: Number(row.tokens_out ?? 0),
+      costUsd: Number(row.cost_usd ?? 0),
+      metadata: (row.metadata as Record<string, unknown>) ?? {},
+      createdAt: row.created_at as string
+    } satisfies TokenUsageEvent
   }
 }

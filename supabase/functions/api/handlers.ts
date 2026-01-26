@@ -1471,12 +1471,14 @@ export function createHandlers({
     if (roleResponse) return roleResponse
 
     const periodStart = getPeriodStart(now())
-    const { data: usage } = await supabase
-      .from("org_usage")
-      .select("tokens_in, tokens_out, period_start")
+    const periodStartDate = new Date(`${periodStart}T00:00:00.000Z`)
+    const periodEndDate = new Date(Date.UTC(periodStartDate.getUTCFullYear(), periodStartDate.getUTCMonth() + 1, 1))
+    const { data: usageEvents } = await supabase
+      .from("token_usage_events")
+      .select("tokens_in, tokens_out")
       .eq("org_id", orgId)
-      .eq("period_start", periodStart)
-      .maybeSingle()
+      .gte("created_at", periodStartDate.toISOString())
+      .lt("created_at", periodEndDate.toISOString())
 
     const { data: limits } = await supabase
       .from("org_limits")
@@ -1484,8 +1486,14 @@ export function createHandlers({
       .eq("org_id", orgId)
       .maybeSingle()
 
-    const tokensIn = usage?.tokens_in ?? 0
-    const tokensOut = usage?.tokens_out ?? 0
+    const tokensIn = (usageEvents ?? []).reduce(
+      (sum: number, row: { tokens_in?: number }) => sum + (row.tokens_in ?? 0),
+      0
+    )
+    const tokensOut = (usageEvents ?? []).reduce(
+      (sum: number, row: { tokens_out?: number }) => sum + (row.tokens_out ?? 0),
+      0
+    )
     const tokensUsed = tokensIn + tokensOut
     const budget = limits?.monthly_token_budget ?? null
     const budgetRemaining = budget !== null ? Math.max(0, budget - tokensUsed) : null
@@ -1646,6 +1654,164 @@ export function createHandlers({
     })
 
     return jsonResponse(200, { workspaces: reports })
+  }
+
+  async function handleCreateReportExport(request: Request, orgId: string) {
+    const user = await requireUser(request)
+    if (!user) {
+      return jsonResponse(401, { error: { code: "UNAUTHORIZED", message: "Auth required" } })
+    }
+
+    const { membership, error: accessError } = await requireOrgAccess(user, orgId)
+    if (accessError || !membership) {
+      return accessError ?? jsonResponse(403, { error: { code: "FORBIDDEN", message: "Access denied" } })
+    }
+    const roleResponse = requireRole(membership.role, new Set(["ADMIN"]), "Admin role required")
+    if (roleResponse) return roleResponse
+
+    const payload = await parseJsonBody(request)
+    if (!payload || !isNonEmptyString(payload.format)) {
+      return jsonResponse(400, {
+        error: { code: "VALIDATION_ERROR", message: "format is required" }
+      })
+    }
+
+    const format = String(payload.format).toLowerCase()
+    if (!["csv", "pdf"].includes(format)) {
+      return jsonResponse(400, {
+        error: { code: "VALIDATION_ERROR", message: "format must be csv or pdf" }
+      })
+    }
+
+    const workspaceId = isNonEmptyString(payload.workspace_id) ? payload.workspace_id : null
+
+    let jobWorkspaceId = workspaceId
+    if (!jobWorkspaceId) {
+      const { data: workspace } = await supabase
+        .from("workspaces")
+        .select("id")
+        .eq("org_id", orgId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (!workspace) {
+        return jsonResponse(400, {
+          error: { code: "VALIDATION_ERROR", message: "workspace_id is required" }
+        })
+      }
+      jobWorkspaceId = workspace.id
+    }
+
+    const reportExportId = crypto.randomUUID()
+    const jobId = crypto.randomUUID()
+
+    const { data: reportExport, error: exportError } = await supabase
+      .from("report_exports")
+      .insert({
+        id: reportExportId,
+        org_id: orgId,
+        workspace_id: workspaceId,
+        job_id: jobId,
+        format,
+        status: "QUEUED",
+        created_by: user.id
+      })
+      .select("*")
+      .single()
+
+    if (exportError || !reportExport) {
+      return jsonResponse(500, { error: { code: "INTERNAL_ERROR", message: exportError?.message ?? "Insert failed" } })
+    }
+
+    const { error: jobError } = await supabase
+      .from("jobs")
+      .insert({
+        id: jobId,
+        org_id: orgId,
+        workspace_id: jobWorkspaceId,
+        job_type: "EXPORT_REPORT",
+        status: "QUEUED",
+        payload: {
+          job_id: jobId,
+          org_id: orgId,
+          workspace_id: jobWorkspaceId,
+          report_export_id: reportExportId,
+          format,
+          type: "EXPORT_REPORT"
+        }
+      })
+
+    if (jobError) {
+      return jsonResponse(500, { error: { code: "INTERNAL_ERROR", message: jobError.message } })
+    }
+
+    await enqueueJob({
+      job_id: jobId,
+      org_id: orgId,
+      workspace_id: jobWorkspaceId,
+      report_export_id: reportExportId,
+      format,
+      type: "EXPORT_REPORT"
+    })
+
+    await recordAuditEvent({
+      orgId,
+      workspaceId,
+      actorUserId: user.id,
+      eventType: "report.export_requested",
+      entityType: "report_export",
+      entityId: reportExportId,
+      payload: { format }
+    })
+
+    return jsonResponse(200, { report_export: reportExport, job_id: jobId })
+  }
+
+  async function handleListReportExports(request: Request, orgId: string) {
+    const user = await requireUser(request)
+    if (!user) {
+      return jsonResponse(401, { error: { code: "UNAUTHORIZED", message: "Auth required" } })
+    }
+
+    const { membership, error: accessError } = await requireOrgAccess(user, orgId)
+    if (accessError || !membership) {
+      return accessError ?? jsonResponse(403, { error: { code: "FORBIDDEN", message: "Access denied" } })
+    }
+    const roleResponse = requireRole(membership.role, new Set(["ADMIN"]), "Admin role required")
+    if (roleResponse) return roleResponse
+
+    const url = new URL(request.url)
+    const workspaceId = url.searchParams.get("workspace_id")
+
+    let query = supabase
+      .from("report_exports")
+      .select("*")
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false })
+
+    if (workspaceId) {
+      query = query.eq("workspace_id", workspaceId)
+    }
+
+    const { data: exports, error } = await query
+
+    if (error) {
+      return jsonResponse(500, { error: { code: "INTERNAL_ERROR", message: error.message } })
+    }
+
+    const exportsWithUrls = await Promise.all(
+      (exports ?? []).map(async (row: Record<string, unknown>) => {
+        if (!row.storage_bucket || !row.storage_path) {
+          return { ...row, signed_url: null }
+        }
+        const { data } = await supabase.storage
+          .from(row.storage_bucket as string)
+          .createSignedUrl(row.storage_path as string, 3600)
+        return { ...row, signed_url: data?.signedUrl ?? null }
+      })
+    )
+
+    return jsonResponse(200, { exports: exportsWithUrls })
   }
 
   async function handleUpdateOrgSettings(request: Request, orgId: string) {
@@ -3099,12 +3265,39 @@ export function createHandlers({
     }
   }
 
+  async function getTrustCenterAllowlist(orgId: string, workspaceId: string) {
+    const { data: allowlistAnswers } = await supabase
+      .from("trust_center_allowlist_answers")
+      .select("answer_id")
+      .eq("org_id", orgId)
+      .eq("workspace_id", workspaceId)
+
+    const { data: allowlistEvidence } = await supabase
+      .from("trust_center_allowlist_evidence")
+      .select("evidence_id")
+      .eq("org_id", orgId)
+      .eq("workspace_id", workspaceId)
+
+    const answerIds = new Set(
+      (allowlistAnswers ?? []).map((row: { answer_id: string }) => row.answer_id)
+    )
+    const evidenceIds = new Set(
+      (allowlistEvidence ?? []).map((row: { evidence_id: string }) => row.evidence_id)
+    )
+    return {
+      answerIds,
+      evidenceIds,
+      hasAllowlist: answerIds.size > 0 || evidenceIds.size > 0
+    }
+  }
+
   async function buildTrustCenterOverviewPublic(
     orgId: string,
     workspaceId: string,
     includeAnswers: boolean,
     includeEvidence: boolean
   ) {
+    const allowlist = await getTrustCenterAllowlist(orgId, workspaceId)
     const { data: answers } = includeAnswers
       ? await supabase
           .from("answers")
@@ -3123,14 +3316,23 @@ export function createHandlers({
           .eq("access_level", "shareable")
       : { data: [] }
 
-    const answerIds = (answers ?? []).map((row: { id: string }) => row.id)
+    const filteredAnswers = allowlist.hasAllowlist
+      ? (answers ?? []).filter((row: { id: string }) => allowlist.answerIds.has(row.id))
+      : answers ?? []
+    const filteredEvidence = allowlist.hasAllowlist
+      ? (evidence ?? []).filter((row: { id: string }) => allowlist.evidenceIds.has(row.id))
+      : evidence ?? []
+
+    const answerIds = filteredAnswers.map((row: { id: string }) => row.id)
     let answersWithEvidence = new Set<string>()
     if (includeAnswers && includeEvidence && answerIds.length > 0) {
       const { data: links } = await supabase
         .from("answer_evidence_links")
         .select("answer_id, evidence_id")
         .in("answer_id", answerIds)
-      const shareableEvidenceIds = new Set((evidence ?? []).map((row: { id: string }) => row.id))
+      const shareableEvidenceIds = new Set(
+        filteredEvidence.map((row: { id: string }) => row.id)
+      )
       answersWithEvidence = new Set(
         (links ?? [])
           .filter((row: { evidence_id: string }) => shareableEvidenceIds.has(row.evidence_id))
@@ -3138,7 +3340,7 @@ export function createHandlers({
       )
     }
 
-    const answerHighlights = (answers ?? [])
+    const answerHighlights = filteredAnswers
       .slice(0, 8)
       .map((row: { id: string; title: string; last_reviewed_at: string | null; created_at: string }) => ({
         id: row.id,
@@ -3146,7 +3348,7 @@ export function createHandlers({
         last_reviewed_at: row.last_reviewed_at ?? row.created_at
       }))
 
-    const evidenceHighlights = (evidence ?? [])
+    const evidenceHighlights = filteredEvidence
       .slice(0, 8)
       .map((row: { id: string; title: string; url: string | null; expires_at: string | null }) => ({
         id: row.id,
@@ -3158,10 +3360,10 @@ export function createHandlers({
     return {
       workspace_id: workspaceId,
       summary: {
-        approved_answers: includeAnswers ? answers?.length ?? 0 : 0,
+        approved_answers: includeAnswers ? filteredAnswers.length : 0,
         answers_with_evidence: includeAnswers && includeEvidence ? answersWithEvidence.size : 0,
-        evidence_total: includeEvidence ? evidence?.length ?? 0 : 0,
-        evidence_shareable: includeEvidence ? evidence?.length ?? 0 : 0
+        evidence_total: includeEvidence ? filteredEvidence.length : 0,
+        evidence_shareable: includeEvidence ? filteredEvidence.length : 0
       },
       answers: includeAnswers ? answerHighlights : [],
       evidence: includeEvidence ? evidenceHighlights : []
@@ -3194,6 +3396,438 @@ export function createHandlers({
 
     const overview = await buildTrustCenterOverviewInternal(membership.orgId, workspaceId)
     return jsonResponse(200, overview)
+  }
+
+  async function handleGetTrustCenterAllowlist(request: Request) {
+    const user = await requireUser(request)
+    if (!user) {
+      return jsonResponse(401, { error: { code: "UNAUTHORIZED", message: "Auth required" } })
+    }
+
+    const url = new URL(request.url)
+    const workspaceId = url.searchParams.get("workspace_id")
+    if (!workspaceId) {
+      return jsonResponse(400, {
+        error: { code: "VALIDATION_ERROR", message: "workspace_id is required" }
+      })
+    }
+
+    const { membership, error: accessError } = await requireWorkspaceAccess(user, workspaceId)
+    if (accessError || !membership) {
+      return accessError ?? jsonResponse(403, { error: { code: "FORBIDDEN", message: "Access denied" } })
+    }
+    const roleResponse = requireRole(membership.role, new Set(["ADMIN"]), "Admin role required")
+    if (roleResponse) return roleResponse
+
+    const features = await getOrgFeatures(membership.orgId)
+    if (!features.trust_center_enabled) {
+      return jsonResponse(403, { error: { code: "FORBIDDEN", message: "Trust Center disabled" } })
+    }
+
+    const { data: answers } = await supabase
+      .from("answers")
+      .select("id, title, last_reviewed_at, created_at")
+      .eq("org_id", membership.orgId)
+      .eq("workspace_id", workspaceId)
+      .eq("status", "APPROVED")
+
+    const { data: evidence } = await supabase
+      .from("evidence")
+      .select("id, title, url, access_level, expires_at")
+      .eq("org_id", membership.orgId)
+      .eq("workspace_id", workspaceId)
+      .eq("access_level", "shareable")
+
+    const allowlist = await getTrustCenterAllowlist(membership.orgId, workspaceId)
+
+    return jsonResponse(200, {
+      workspace_id: workspaceId,
+      allowlist: {
+        answer_ids: Array.from(allowlist.answerIds),
+        evidence_ids: Array.from(allowlist.evidenceIds)
+      },
+      answers: (answers ?? []).map((row: { id: string; title: string; last_reviewed_at: string | null; created_at: string }) => ({
+        id: row.id,
+        title: row.title ?? "",
+        last_reviewed_at: row.last_reviewed_at ?? row.created_at
+      })),
+      evidence: (evidence ?? []).map((row: { id: string; title: string; url: string | null; expires_at: string | null }) => ({
+        id: row.id,
+        title: row.title ?? "",
+        url: row.url ?? null,
+        expires_at: row.expires_at ?? null
+      }))
+    })
+  }
+
+  async function handleUpdateTrustCenterAllowlist(request: Request) {
+    const user = await requireUser(request)
+    if (!user) {
+      return jsonResponse(401, { error: { code: "UNAUTHORIZED", message: "Auth required" } })
+    }
+
+    const payload = await parseJsonBody(request)
+    if (!payload || !isNonEmptyString(payload.workspace_id)) {
+      return jsonResponse(400, {
+        error: { code: "VALIDATION_ERROR", message: "workspace_id is required" }
+      })
+    }
+
+    const workspaceId = payload.workspace_id as string
+    const { membership, error: accessError } = await requireWorkspaceAccess(user, workspaceId)
+    if (accessError || !membership) {
+      return accessError ?? jsonResponse(403, { error: { code: "FORBIDDEN", message: "Access denied" } })
+    }
+    const roleResponse = requireRole(membership.role, new Set(["ADMIN"]), "Admin role required")
+    if (roleResponse) return roleResponse
+
+    const features = await getOrgFeatures(membership.orgId)
+    if (!features.trust_center_enabled) {
+      return jsonResponse(403, { error: { code: "FORBIDDEN", message: "Trust Center disabled" } })
+    }
+
+    const answerIds = Array.isArray(payload.answer_ids)
+      ? payload.answer_ids.filter((value) => isNonEmptyString(value))
+      : []
+    const evidenceIds = Array.isArray(payload.evidence_ids)
+      ? payload.evidence_ids.filter((value) => isNonEmptyString(value))
+      : []
+
+    await supabase
+      .from("trust_center_allowlist_answers")
+      .delete()
+      .eq("org_id", membership.orgId)
+      .eq("workspace_id", workspaceId)
+
+    await supabase
+      .from("trust_center_allowlist_evidence")
+      .delete()
+      .eq("org_id", membership.orgId)
+      .eq("workspace_id", workspaceId)
+
+    if (answerIds.length > 0) {
+      await supabase.from("trust_center_allowlist_answers").insert(
+        answerIds.map((answerId) => ({
+          org_id: membership.orgId,
+          workspace_id: workspaceId,
+          answer_id: answerId,
+          created_by: user.id
+        }))
+      )
+    }
+
+    if (evidenceIds.length > 0) {
+      await supabase.from("trust_center_allowlist_evidence").insert(
+        evidenceIds.map((evidenceId) => ({
+          org_id: membership.orgId,
+          workspace_id: workspaceId,
+          evidence_id: evidenceId,
+          created_by: user.id
+        }))
+      )
+    }
+
+    await recordAuditEvent({
+      orgId: membership.orgId,
+      workspaceId,
+      actorUserId: user.id,
+      eventType: "trust_center.allowlist_updated",
+      entityType: "trust_center_allowlist",
+      entityId: workspaceId,
+      payload: { answer_ids: answerIds, evidence_ids: evidenceIds }
+    })
+
+    return jsonResponse(200, {
+      workspace_id: workspaceId,
+      allowlist: {
+        answer_ids: answerIds,
+        evidence_ids: evidenceIds
+      }
+    })
+  }
+
+  async function handleCreateTrustCenterAccessRequest(request: Request) {
+    const payload = await parseJsonBody(request)
+    if (!payload || !isNonEmptyString(payload.token)) {
+      return jsonResponse(400, {
+        error: { code: "VALIDATION_ERROR", message: "token is required" }
+      })
+    }
+
+    const token = payload.token as string
+    const { data: share } = await supabase
+      .from("trust_center_shares")
+      .select("id, org_id, workspace_id, expires_at, revoked_at")
+      .eq("token", token)
+      .maybeSingle()
+
+    if (!share) {
+      return jsonResponse(404, { error: { code: "NOT_FOUND", message: "Share not found" } })
+    }
+
+    if (share.revoked_at) {
+      return jsonResponse(403, { error: { code: "FORBIDDEN", message: "Share revoked" } })
+    }
+
+    if (share.expires_at) {
+      const expiresAt = new Date(share.expires_at)
+      if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() < now().getTime()) {
+        return jsonResponse(403, { error: { code: "FORBIDDEN", message: "Share expired" } })
+      }
+    }
+
+    const features = await getOrgFeatures(share.org_id)
+    if (!features.trust_center_enabled) {
+      return jsonResponse(403, { error: { code: "FORBIDDEN", message: "Trust Center disabled" } })
+    }
+
+    const requesterName = isNonEmptyString(payload.requester_name) ? payload.requester_name : null
+    const requesterEmail = isNonEmptyString(payload.requester_email) ? payload.requester_email : null
+    const requesterCompany = isNonEmptyString(payload.requester_company) ? payload.requester_company : null
+    const message = isNonEmptyString(payload.message) ? payload.message : null
+
+    const { data: requestRow, error } = await supabase
+      .from("trust_center_access_requests")
+      .insert({
+        org_id: share.org_id,
+        workspace_id: share.workspace_id,
+        share_id: share.id,
+        requester_name: requesterName,
+        requester_email: requesterEmail,
+        requester_company: requesterCompany,
+        message,
+        status: "PENDING"
+      })
+      .select("*")
+      .single()
+
+    if (error || !requestRow) {
+      return jsonResponse(500, { error: { code: "INTERNAL_ERROR", message: error?.message ?? "Insert failed" } })
+    }
+
+    const answerIds = Array.isArray(payload.answer_ids)
+      ? payload.answer_ids.filter((value) => isNonEmptyString(value))
+      : []
+    const evidenceIds = Array.isArray(payload.evidence_ids)
+      ? payload.evidence_ids.filter((value) => isNonEmptyString(value))
+      : []
+
+    if (answerIds.length > 0) {
+      const { data: validAnswers } = await supabase
+        .from("answers")
+        .select("id")
+        .eq("org_id", share.org_id)
+        .eq("workspace_id", share.workspace_id)
+        .in("id", answerIds)
+      const validIds = (validAnswers ?? []).map((row: { id: string }) => row.id)
+      if (validIds.length > 0) {
+        await supabase.from("trust_center_access_request_answers").insert(
+          validIds.map((answerId) => ({
+            request_id: requestRow.id,
+            org_id: share.org_id,
+            workspace_id: share.workspace_id,
+            answer_id: answerId
+          }))
+        )
+      }
+    }
+
+    if (evidenceIds.length > 0) {
+      const { data: validEvidence } = await supabase
+        .from("evidence")
+        .select("id")
+        .eq("org_id", share.org_id)
+        .eq("workspace_id", share.workspace_id)
+        .in("id", evidenceIds)
+      const validIds = (validEvidence ?? []).map((row: { id: string }) => row.id)
+      if (validIds.length > 0) {
+        await supabase.from("trust_center_access_request_evidence").insert(
+          validIds.map((evidenceId) => ({
+            request_id: requestRow.id,
+            org_id: share.org_id,
+            workspace_id: share.workspace_id,
+            evidence_id: evidenceId
+          }))
+        )
+      }
+    }
+
+    await recordAuditEvent({
+      orgId: share.org_id,
+      workspaceId: share.workspace_id,
+      actorUserId: null,
+      eventType: "trust_center.access_requested",
+      entityType: "trust_center_access_request",
+      entityId: requestRow.id,
+      payload: {
+        requester_email: requesterEmail,
+        requester_company: requesterCompany,
+        requested_answers: answerIds.length,
+        requested_evidence: evidenceIds.length
+      }
+    })
+
+    return jsonResponse(200, { request: requestRow })
+  }
+
+  async function handleListTrustCenterAccessRequests(request: Request) {
+    const user = await requireUser(request)
+    if (!user) {
+      return jsonResponse(401, { error: { code: "UNAUTHORIZED", message: "Auth required" } })
+    }
+
+    const url = new URL(request.url)
+    const workspaceId = url.searchParams.get("workspace_id")
+    if (!workspaceId) {
+      return jsonResponse(400, {
+        error: { code: "VALIDATION_ERROR", message: "workspace_id is required" }
+      })
+    }
+
+    const { membership, error: accessError } = await requireWorkspaceAccess(user, workspaceId)
+    if (accessError || !membership) {
+      return accessError ?? jsonResponse(403, { error: { code: "FORBIDDEN", message: "Access denied" } })
+    }
+    const roleResponse = requireRole(membership.role, new Set(["ADMIN"]), "Admin role required")
+    if (roleResponse) return roleResponse
+
+    const { data: requests } = await supabase
+      .from("trust_center_access_requests")
+      .select("*")
+      .eq("org_id", membership.orgId)
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: false })
+
+    const requestIds = (requests ?? []).map((row: { id: string }) => row.id)
+    const { data: requestAnswers } = requestIds.length
+      ? await supabase
+          .from("trust_center_access_request_answers")
+          .select("request_id, answer_id")
+          .in("request_id", requestIds)
+      : { data: [] }
+    const { data: requestEvidence } = requestIds.length
+      ? await supabase
+          .from("trust_center_access_request_evidence")
+          .select("request_id, evidence_id")
+          .in("request_id", requestIds)
+      : { data: [] }
+
+    return jsonResponse(200, {
+      requests: (requests ?? []).map((requestRow: Record<string, unknown>) => ({
+        ...requestRow,
+        answer_ids: (requestAnswers ?? [])
+          .filter((row: { request_id: string }) => row.request_id === requestRow.id)
+          .map((row: { answer_id: string }) => row.answer_id),
+        evidence_ids: (requestEvidence ?? [])
+          .filter((row: { request_id: string }) => row.request_id === requestRow.id)
+          .map((row: { evidence_id: string }) => row.evidence_id)
+      }))
+    })
+  }
+
+  async function handleUpdateTrustCenterAccessRequest(
+    request: Request,
+    requestId: string
+  ) {
+    const user = await requireUser(request)
+    if (!user) {
+      return jsonResponse(401, { error: { code: "UNAUTHORIZED", message: "Auth required" } })
+    }
+
+    const payload = await parseJsonBody(request)
+    if (!payload || !isNonEmptyString(payload.status)) {
+      return jsonResponse(400, {
+        error: { code: "VALIDATION_ERROR", message: "status is required" }
+      })
+    }
+
+    const status = (payload.status as string).toUpperCase()
+    if (!["APPROVED", "DENIED"].includes(status)) {
+      return jsonResponse(400, {
+        error: { code: "VALIDATION_ERROR", message: "status must be APPROVED or DENIED" }
+      })
+    }
+
+    const { data: requestRow } = await supabase
+      .from("trust_center_access_requests")
+      .select("id, org_id, workspace_id")
+      .eq("id", requestId)
+      .maybeSingle()
+
+    if (!requestRow) {
+      return jsonResponse(404, { error: { code: "NOT_FOUND", message: "Request not found" } })
+    }
+
+    const { membership, error: accessError } = await requireWorkspaceAccess(user, requestRow.workspace_id)
+    if (accessError || !membership) {
+      return accessError ?? jsonResponse(403, { error: { code: "FORBIDDEN", message: "Access denied" } })
+    }
+    const roleResponse = requireRole(membership.role, new Set(["ADMIN"]), "Admin role required")
+    if (roleResponse) return roleResponse
+
+    const decisionNote = isNonEmptyString(payload.decision_note) ? payload.decision_note : null
+    const reviewedAt = now().toISOString()
+
+    const { data: updated } = await supabase
+      .from("trust_center_access_requests")
+      .update({
+        status,
+        reviewed_at: reviewedAt,
+        reviewed_by: user.id,
+        decision_note: decisionNote
+      })
+      .eq("id", requestId)
+      .select("*")
+      .single()
+
+    const grantRequested = payload.grant_requested !== false
+    if (status === "APPROVED" && grantRequested) {
+      const { data: requestAnswers } = await supabase
+        .from("trust_center_access_request_answers")
+        .select("answer_id")
+        .eq("request_id", requestId)
+      const { data: requestEvidence } = await supabase
+        .from("trust_center_access_request_evidence")
+        .select("evidence_id")
+        .eq("request_id", requestId)
+
+      if ((requestAnswers ?? []).length > 0) {
+        await supabase.from("trust_center_allowlist_answers").insert(
+          (requestAnswers ?? []).map((row: { answer_id: string }) => ({
+            org_id: requestRow.org_id,
+            workspace_id: requestRow.workspace_id,
+            answer_id: row.answer_id,
+            created_by: user.id
+          })),
+          { onConflict: "org_id,workspace_id,answer_id" }
+        )
+      }
+      if ((requestEvidence ?? []).length > 0) {
+        await supabase.from("trust_center_allowlist_evidence").insert(
+          (requestEvidence ?? []).map((row: { evidence_id: string }) => ({
+            org_id: requestRow.org_id,
+            workspace_id: requestRow.workspace_id,
+            evidence_id: row.evidence_id,
+            created_by: user.id
+          })),
+          { onConflict: "org_id,workspace_id,evidence_id" }
+        )
+      }
+    }
+
+    await recordAuditEvent({
+      orgId: requestRow.org_id,
+      workspaceId: requestRow.workspace_id,
+      actorUserId: user.id,
+      eventType: status === "APPROVED"
+        ? "trust_center.access_request_approved"
+        : "trust_center.access_request_denied",
+      entityType: "trust_center_access_request",
+      entityId: requestId,
+      payload: { decision_note: decisionNote }
+    })
+
+    return jsonResponse(200, { request: updated })
   }
 
   async function handleListTrustCenterShares(request: Request) {
@@ -3478,6 +4112,16 @@ export function createHandlers({
       return handleOrgWorkspaceReports(request, orgReportsMatch[1])
     }
 
+    const orgReportsExportMatch = path.match(/^\/api\/orgs\/([a-f0-9-]+)\/reports\/export$/)
+    if (orgReportsExportMatch && request.method === "POST") {
+      return handleCreateReportExport(request, orgReportsExportMatch[1])
+    }
+
+    const orgReportsExportsMatch = path.match(/^\/api\/orgs\/([a-f0-9-]+)\/reports\/exports$/)
+    if (orgReportsExportsMatch && request.method === "GET") {
+      return handleListReportExports(request, orgReportsExportsMatch[1])
+    }
+
     const workspaceMembersMatch = path.match(/^\/api\/workspaces\/([a-f0-9-]+)\/members$/)
     if (workspaceMembersMatch && request.method === "GET") {
       return handleListWorkspaceMembers(request, workspaceMembersMatch[1])
@@ -3555,6 +4199,27 @@ export function createHandlers({
 
     if (path === "/api/answers/expiring" && request.method === "GET") {
       return handleListExpiringAnswers(request)
+    }
+
+    if (path === "/api/trust-center/allowlist" && request.method === "GET") {
+      return handleGetTrustCenterAllowlist(request)
+    }
+
+    if (path === "/api/trust-center/allowlist" && request.method === "POST") {
+      return handleUpdateTrustCenterAllowlist(request)
+    }
+
+    if (path === "/api/trust-center/access-request" && request.method === "POST") {
+      return handleCreateTrustCenterAccessRequest(request)
+    }
+
+    if (path === "/api/trust-center/access-requests" && request.method === "GET") {
+      return handleListTrustCenterAccessRequests(request)
+    }
+
+    const accessRequestUpdateMatch = path.match(/^\/api\/trust-center\/access-requests\/([a-f0-9-]+)$/)
+    if (accessRequestUpdateMatch && request.method === "POST") {
+      return handleUpdateTrustCenterAccessRequest(request, accessRequestUpdateMatch[1])
     }
 
     if (path === "/api/trust-center/overview" && request.method === "GET") {

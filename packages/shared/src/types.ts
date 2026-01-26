@@ -1,10 +1,12 @@
 import type {
   AnswerStatus,
   ConfidenceBucket,
+  AccessRequestStatus,
   JobStatus,
   JobType,
   LiveQuestionAction,
   QuestionnaireStatus,
+  ReportExportFormat,
   ResponseType,
   SensitivityLevel,
   SuggestionStatus
@@ -137,5 +139,76 @@ export interface LiveQuestionMapping {
   action: LiveQuestionAction
   finalText?: string | null
   createdBy: string
+  createdAt: string
+}
+
+export interface TrustCenterAllowlistAnswer {
+  id: string
+  orgId: string
+  workspaceId: string
+  answerId: string
+  createdBy: string
+  createdAt: string
+}
+
+export interface TrustCenterAllowlistEvidence {
+  id: string
+  orgId: string
+  workspaceId: string
+  evidenceId: string
+  createdBy: string
+  createdAt: string
+}
+
+export interface TrustCenterAccessRequest {
+  id: string
+  orgId: string
+  workspaceId: string
+  shareId?: string | null
+  requesterName?: string | null
+  requesterEmail?: string | null
+  requesterCompany?: string | null
+  message?: string | null
+  status: AccessRequestStatus
+  createdAt: string
+  reviewedAt?: string | null
+  reviewedBy?: string | null
+  decisionNote?: string | null
+}
+
+export interface ReportExport {
+  id: string
+  orgId: string
+  workspaceId?: string | null
+  jobId?: string | null
+  format: ReportExportFormat
+  status: JobStatus
+  storageBucket?: string | null
+  storagePath?: string | null
+  fileName?: string | null
+  mimeType?: string | null
+  sizeBytes?: number | null
+  checksumSha256?: string | null
+  expiresAt?: string | null
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string | null
+  lastError?: string | null
+}
+
+export interface TokenUsageEvent {
+  id: string
+  orgId: string
+  workspaceId?: string | null
+  jobId?: string | null
+  questionnaireId?: string | null
+  eventType: string
+  provider?: string | null
+  model?: string | null
+  tokensIn: number
+  tokensOut: number
+  costUsd: number
+  metadata: Record<string, unknown>
   createdAt: string
 }

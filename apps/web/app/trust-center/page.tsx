@@ -20,21 +20,35 @@ import {
 } from "@tuesdaytrust/ui"
 import {
   fetchTrustCenterOverview,
+  fetchTrustCenterAllowlist,
+  updateTrustCenterAllowlist,
+  fetchTrustCenterAccessRequests,
+  updateTrustCenterAccessRequest,
   fetchTrustCenterShares,
   createTrustCenterShare,
   revokeTrustCenterShare,
   type TrustCenterOverviewResponse,
-  type TrustCenterShare
+  type TrustCenterShare,
+  type TrustCenterAccessRequest,
+  type TrustCenterAllowlistResponse
 } from "../../lib/api"
 import { useWorkspace } from "../../lib/use-workspace"
 
 export default function TrustCenterPage() {
-  const { features, workspaceId } = useWorkspace()
+  const { features, workspaceId, role } = useWorkspace()
   const enabled = features?.trust_center_enabled ?? false
   const [overview, setOverview] = React.useState<TrustCenterOverviewResponse | null>(null)
   const [status, setStatus] = React.useState<string | null>(null)
   const [shares, setShares] = React.useState<TrustCenterShare[]>([])
   const [shareStatus, setShareStatus] = React.useState<string | null>(null)
+  const [allowlistData, setAllowlistData] = React.useState<TrustCenterAllowlistResponse | null>(null)
+  const [allowlistStatus, setAllowlistStatus] = React.useState<string | null>(null)
+  const [accessRequests, setAccessRequests] = React.useState<TrustCenterAccessRequest[]>([])
+  const [accessRequestStatus, setAccessRequestStatus] = React.useState<string | null>(null)
+  const [allowlistSelection, setAllowlistSelection] = React.useState({
+    answerIds: new Set<string>(),
+    evidenceIds: new Set<string>()
+  })
   const [shareForm, setShareForm] = React.useState({
     includeAnswers: true,
     includeEvidence: true,
@@ -44,10 +58,19 @@ export default function TrustCenterPage() {
   React.useEffect(() => {
     if (!enabled || !workspaceId) return
     void (async () => {
-      const [overviewResult, sharesResult] = await Promise.all([
+      const baseRequests = [
         fetchTrustCenterOverview(workspaceId),
         fetchTrustCenterShares(workspaceId)
-      ])
+      ] as const
+      const adminRequests =
+        role === "ADMIN"
+          ? ([fetchTrustCenterAllowlist(workspaceId), fetchTrustCenterAccessRequests(workspaceId)] as const)
+          : ([] as const)
+
+      const results = await Promise.all([...baseRequests, ...adminRequests])
+      const [overviewResult, sharesResult] = results
+      const allowlistResult = role === "ADMIN" ? results[2] : null
+      const accessRequestResult = role === "ADMIN" ? results[3] : null
       if (overviewResult.error) {
         setStatus(overviewResult.error.message)
       } else {
@@ -60,8 +83,28 @@ export default function TrustCenterPage() {
         setShareStatus(null)
         setShares(sharesResult.data?.shares ?? [])
       }
+      if (role === "ADMIN" && allowlistResult) {
+        if (allowlistResult.error) {
+          setAllowlistStatus(allowlistResult.error.message)
+        } else {
+          setAllowlistStatus(null)
+          setAllowlistData(allowlistResult.data)
+          setAllowlistSelection({
+            answerIds: new Set(allowlistResult.data?.allowlist.answer_ids ?? []),
+            evidenceIds: new Set(allowlistResult.data?.allowlist.evidence_ids ?? [])
+          })
+        }
+      }
+      if (role === "ADMIN" && accessRequestResult) {
+        if (accessRequestResult.error) {
+          setAccessRequestStatus(accessRequestResult.error.message)
+        } else {
+          setAccessRequestStatus(null)
+          setAccessRequests(accessRequestResult.data?.requests ?? [])
+        }
+      }
     })()
-  }, [enabled, workspaceId])
+  }, [enabled, workspaceId, role])
 
   async function handleCreateShare(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -97,6 +140,63 @@ export default function TrustCenterPage() {
       )
     }
     setShareStatus("Share link revoked.")
+  }
+
+  function toggleAllowlistAnswer(answerId: string) {
+    setAllowlistSelection((prev) => {
+      const next = new Set(prev.answerIds)
+      if (next.has(answerId)) {
+        next.delete(answerId)
+      } else {
+        next.add(answerId)
+      }
+      return { ...prev, answerIds: next }
+    })
+  }
+
+  function toggleAllowlistEvidence(evidenceId: string) {
+    setAllowlistSelection((prev) => {
+      const next = new Set(prev.evidenceIds)
+      if (next.has(evidenceId)) {
+        next.delete(evidenceId)
+      } else {
+        next.add(evidenceId)
+      }
+      return { ...prev, evidenceIds: next }
+    })
+  }
+
+  async function handleSaveAllowlist() {
+    if (!workspaceId) return
+    setAllowlistStatus(null)
+    const result = await updateTrustCenterAllowlist({
+      workspace_id: workspaceId,
+      answer_ids: Array.from(allowlistSelection.answerIds),
+      evidence_ids: Array.from(allowlistSelection.evidenceIds)
+    })
+    if (result.error) {
+      setAllowlistStatus(result.error.message)
+      return
+    }
+    setAllowlistStatus("Allowlist updated.")
+    if (result.data) {
+      setAllowlistData(result.data)
+    }
+  }
+
+  async function handleAccessRequestDecision(requestId: string, status: "APPROVED" | "DENIED") {
+    setAccessRequestStatus(null)
+    const result = await updateTrustCenterAccessRequest(requestId, { status })
+    if (result.error) {
+      setAccessRequestStatus(result.error.message)
+      return
+    }
+    if (result.data?.request) {
+      setAccessRequests((prev) =>
+        prev.map((request) => (request.id === requestId ? result.data!.request : request))
+      )
+    }
+    setAccessRequestStatus(`Request ${status.toLowerCase()}.`)
   }
 
   function getShareStatus(share: TrustCenterShare) {
@@ -224,6 +324,153 @@ export default function TrustCenterPage() {
               </TableBody>
             </Table>
           </div>
+
+          {role === "ADMIN" ? (
+            <div className="rounded-xl border border-zinc-950/10 bg-white p-4 dark:border-white/10 dark:bg-zinc-900">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <Text className="text-sm font-semibold text-zinc-950 dark:text-white">Trust Center allowlist</Text>
+                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">
+                    Choose approved answers and evidence to include in public shares.
+                  </Text>
+                </div>
+                <div className="flex items-center gap-3">
+                  {allowlistStatus ? (
+                    <Text className="text-sm text-amber-600">{allowlistStatus}</Text>
+                  ) : null}
+                  <Button outline onClick={handleSaveAllowlist}>
+                    Save allowlist
+                  </Button>
+                </div>
+              </div>
+
+              {!allowlistData ? (
+                <Text className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+                  Allowlist is unavailable.
+                </Text>
+              ) : (
+                <div className="mt-4 grid gap-6 md:grid-cols-2">
+                  <div>
+                    <Text className="text-sm font-semibold text-zinc-950 dark:text-white">Answers</Text>
+                    <Table className="mt-3">
+                      <TableHead>
+                        <TableRow>
+                          <TableHeader>Include</TableHeader>
+                          <TableHeader>Title</TableHeader>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {allowlistData.answers.map((answer) => (
+                          <TableRow key={answer.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={allowlistSelection.answerIds.has(answer.id)}
+                                onChange={() => toggleAllowlistAnswer(answer.id)}
+                              />
+                            </TableCell>
+                            <TableCell>{answer.title}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div>
+                    <Text className="text-sm font-semibold text-zinc-950 dark:text-white">Evidence</Text>
+                    <Table className="mt-3">
+                      <TableHead>
+                        <TableRow>
+                          <TableHeader>Include</TableHeader>
+                          <TableHeader>Title</TableHeader>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {allowlistData.evidence.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={allowlistSelection.evidenceIds.has(item.id)}
+                                onChange={() => toggleAllowlistEvidence(item.id)}
+                              />
+                            </TableCell>
+                            <TableCell>{item.title}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {role === "ADMIN" ? (
+            <div className="rounded-xl border border-zinc-950/10 bg-white p-4 dark:border-white/10 dark:bg-zinc-900">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <Text className="text-sm font-semibold text-zinc-950 dark:text-white">
+                    Access requests
+                  </Text>
+                  <Text className="text-sm text-zinc-500 dark:text-zinc-400">
+                    Review requests for additional Trust Center access.
+                  </Text>
+                </div>
+                {accessRequestStatus ? (
+                  <Text className="text-sm text-amber-600">{accessRequestStatus}</Text>
+                ) : null}
+              </div>
+
+              {accessRequests.length === 0 ? (
+                <Text className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+                  No access requests yet.
+                </Text>
+              ) : (
+                <Table className="mt-3">
+                  <TableHead>
+                    <TableRow>
+                      <TableHeader>Requester</TableHeader>
+                      <TableHeader>Message</TableHeader>
+                      <TableHeader>Status</TableHeader>
+                      <TableHeader>Actions</TableHeader>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {accessRequests.map((request) => (
+                      <TableRow key={request.id}>
+                        <TableCell>
+                          <div className="text-sm text-zinc-950 dark:text-white">
+                            {request.requester_name ?? "Anonymous"}
+                          </div>
+                          <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                            {request.requester_email ?? "No email"}
+                          </div>
+                        </TableCell>
+                        <TableCell>{request.message ?? "—"}</TableCell>
+                        <TableCell>{request.status}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              outline
+                              disabled={request.status !== "PENDING"}
+                              onClick={() => handleAccessRequestDecision(request.id, "APPROVED")}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              outline
+                              disabled={request.status !== "PENDING"}
+                              onClick={() => handleAccessRequestDecision(request.id, "DENIED")}
+                            >
+                              Deny
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          ) : null}
 
           <div className="rounded-xl border border-zinc-950/10 bg-white p-4 dark:border-white/10 dark:bg-zinc-900">
             <div className="flex flex-wrap items-center justify-between gap-4">

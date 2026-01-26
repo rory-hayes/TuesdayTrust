@@ -168,6 +168,29 @@ Response:
 }
 ```
 
+### POST /api/orgs/:id/reports/export
+Queue a client report export (Admin only).
+
+Request:
+```json
+{ "format": "csv", "workspace_id": "uuid (optional)" }
+```
+
+Response:
+```json
+{
+  "report_export": { "id": "uuid", "format": "csv", "status": "QUEUED" },
+  "job_id": "uuid"
+}
+```
+
+### GET /api/orgs/:id/reports/exports
+List recent report exports (Admin only).
+
+Query params:
+- `workspace_id` (optional)
+
+
 ### POST /api/questionnaires
 Create a questionnaire record and enqueue processing.
 
@@ -394,6 +417,52 @@ Request:
 ### POST /api/trust-center/shares/:id/revoke
 Revoke a Trust Center share link (Admin only).
 
+### GET /api/trust-center/allowlist
+Return approved answers/evidence and current allowlist (Admin only).
+
+Query params:
+- `workspace_id` (required)
+
+### POST /api/trust-center/allowlist
+Update allowlist selections (Admin only).
+
+Request:
+```json
+{
+  "workspace_id": "uuid",
+  "answer_ids": ["uuid"],
+  "evidence_ids": ["uuid"]
+}
+```
+
+### POST /api/trust-center/access-request
+Submit an access request from a shared link (no auth).
+
+Request:
+```json
+{
+  "token": "share-token",
+  "requester_name": "Jane Doe",
+  "requester_email": "jane@client.com",
+  "requester_company": "Client Inc",
+  "message": "Need more detail on SOC 2."
+}
+```
+
+### GET /api/trust-center/access-requests
+List access requests for a workspace (Admin only).
+
+Query params:
+- `workspace_id` (required)
+
+### POST /api/trust-center/access-requests/:id
+Approve or deny a request (Admin only).
+
+Request:
+```json
+{ "status": "APPROVED", "decision_note": "Approved for Q1 review." }
+```
+
 ### GET /api/trust-center/public
 Return a shared Trust Center snapshot (no auth).
 
@@ -418,6 +487,18 @@ Query params:
   "workspace_id": "uuid",
   "type": "PROCESS_QUESTIONNAIRE",
   "questionnaire_id": "uuid"
+}
+```
+
+Report export payload:
+```json
+{
+  "job_id": "uuid",
+  "org_id": "uuid",
+  "workspace_id": "uuid",
+  "type": "EXPORT_REPORT",
+  "report_export_id": "uuid",
+  "format": "csv"
 }
 ```
 

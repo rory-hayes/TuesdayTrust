@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto"
 import {
   ConfidenceBucket,
   DOCX_MIME_TYPE,
-  ESTIMATED_TOKENS_PER_QUESTION,
   JobStatus,
+  ReportExportFormat,
   EXPORT_RETENTION_DAYS,
   MAX_QUESTIONNAIRE_QUESTIONS,
   PDF_MIME_TYPE,
@@ -22,12 +22,21 @@ import { applySuggestionsToPdf } from "./pdf/exporter"
 import { generateSuggestions } from "./suggestions/generate"
 import { logJobEvent } from "./metrics/logging"
 import type { ParsedWorkbook } from "./questions/types"
+import { buildReportCsv, buildReportPdf, type WorkspaceReportRow } from "./reports/exporter"
 
 export interface ProcessJobPayload {
   jobId: string
   orgId: string
   workspaceId: string
   questionnaireId: string
+}
+
+export interface ReportExportJobPayload {
+  jobId: string
+  orgId: string
+  reportExportId: string
+  workspaceId?: string | null
+  format: ReportExportFormat
 }
 
 export interface JobRunnerOptions {
@@ -41,6 +50,88 @@ function getPeriodStart(date: Date) {
   return period.toISOString().slice(0, 10)
 }
 
+async function buildOrgWorkspaceReports(orgId: string, dataStore: DataStore) {
+  const [workspaces, questionnaires, suggestions, answers] = await Promise.all([
+    dataStore.listOrgWorkspaces(orgId),
+    dataStore.listOrgQuestionnaires(orgId),
+    dataStore.listOrgSuggestions(orgId),
+    dataStore.listOrgApprovedAnswers(orgId)
+  ])
+
+  const reportMap = new Map<string, WorkspaceReportRow>()
+  for (const workspace of workspaces) {
+    reportMap.set(workspace.id, {
+      workspaceId: workspace.id,
+      name: workspace.name ?? "Workspace",
+      counts: {
+        questionnaires_total: 0,
+        questionnaires_completed: 0,
+        questionnaires_in_review: 0,
+        questionnaires_failed: 0,
+        suggestions_total: 0,
+        auto_fill: 0,
+        needs_review: 0,
+        manual: 0,
+        approved_answers: 0
+      },
+      auto_fill_rate: 0,
+      time_saved_hours: 0,
+      last_activity_at: null
+    })
+  }
+
+  for (const row of questionnaires) {
+    const record = reportMap.get(row.workspaceId)
+    if (!record) continue
+    record.counts.questionnaires_total += 1
+    if (row.status === QuestionnaireStatus.COMPLETED) {
+      record.counts.questionnaires_completed += 1
+    } else if (row.status === QuestionnaireStatus.FAILED) {
+      record.counts.questionnaires_failed += 1
+    } else if (row.status === QuestionnaireStatus.READY_FOR_REVIEW) {
+      record.counts.questionnaires_in_review += 1
+    }
+    if (row.updatedAt) {
+      const updatedAt = new Date(row.updatedAt).toISOString()
+      if (!record.last_activity_at || updatedAt > record.last_activity_at) {
+        record.last_activity_at = updatedAt
+      }
+    }
+  }
+
+  for (const row of suggestions) {
+    const record = reportMap.get(row.workspaceId)
+    if (!record) continue
+    record.counts.suggestions_total += 1
+    if (row.confidenceBucket === ConfidenceBucket.AUTO_FILL) record.counts.auto_fill += 1
+    if (row.confidenceBucket === ConfidenceBucket.NEEDS_REVIEW) record.counts.needs_review += 1
+    if (row.confidenceBucket === ConfidenceBucket.MANUAL) record.counts.manual += 1
+  }
+
+  for (const row of answers) {
+    const record = reportMap.get(row.workspaceId)
+    if (!record) continue
+    record.counts.approved_answers += 1
+  }
+
+  const reports = Array.from(reportMap.values()).map((record) => {
+    const autoFillRate =
+      record.counts.suggestions_total > 0
+        ? Number((record.counts.auto_fill / record.counts.suggestions_total).toFixed(2))
+        : 0
+    const timeSavedHours = Number(
+      ((record.counts.auto_fill * 3) / 60).toFixed(2)
+    )
+    return {
+      ...record,
+      auto_fill_rate: autoFillRate,
+      time_saved_hours: timeSavedHours
+    } satisfies WorkspaceReportRow
+  })
+
+  return reports
+}
+
 export async function processQuestionnaireJob(
   payload: ProcessJobPayload,
   options: JobRunnerOptions
@@ -51,7 +142,8 @@ export async function processQuestionnaireJob(
   let periodStart = getPeriodStart(startedAt)
   let budgetExceeded = false
   let tokensUsed = 0
-  let estimatedTokens = 0
+  let jobTokensIn = 0
+  let jobTokensOut = 0
 
   try {
     const orgLimits = await dataStore.getOrgLimits(payload.orgId)
@@ -120,9 +212,8 @@ export async function processQuestionnaireJob(
       throw new Error("question count exceeds limit")
     }
 
-    estimatedTokens = parsed.totalQuestions * ESTIMATED_TOKENS_PER_QUESTION
     if (typeof orgLimits?.monthlyTokenBudget === "number") {
-      budgetExceeded = tokensUsed + estimatedTokens >= orgLimits.monthlyTokenBudget
+      budgetExceeded = tokensUsed >= orgLimits.monthlyTokenBudget
     }
 
     await dataStore.updateQuestionnaireStatus(
@@ -338,7 +429,20 @@ export async function processQuestionnaireJob(
     })
 
     const endedAt = now()
-    await dataStore.upsertOrgUsage(payload.orgId, periodStart, estimatedTokens, 0)
+    if (jobTokensIn > 0 || jobTokensOut > 0) {
+      await dataStore.upsertOrgUsage(payload.orgId, periodStart, jobTokensIn, jobTokensOut)
+      await dataStore.recordTokenUsage({
+        orgId: payload.orgId,
+        workspaceId: payload.workspaceId,
+        jobId: payload.jobId,
+        questionnaireId: payload.questionnaireId,
+        eventType: "questionnaire.processing",
+        tokensIn: jobTokensIn,
+        tokensOut: jobTokensOut,
+        costUsd: 0,
+        metadata: { source: "job_runner" }
+      })
+    }
     await dataStore.createJobAttempt({
       jobId: payload.jobId,
       startedAt: startedAt.toISOString(),
@@ -356,8 +460,8 @@ export async function processQuestionnaireJob(
         manual: matches.filter(
           (match) => match.confidenceBucket === ConfidenceBucket.MANUAL
         ).length,
-        tokens_in: estimatedTokens,
-        tokens_out: 0,
+        tokens_in: jobTokensIn,
+        tokens_out: jobTokensOut,
         budget_exceeded: budgetExceeded
       }
     })
@@ -391,5 +495,110 @@ export async function processQuestionnaireJob(
     })
 
     throw error
+  }
+}
+
+export async function processReportExportJob(
+  payload: ReportExportJobPayload,
+  options: JobRunnerOptions
+) {
+  const { dataStore, now = () => new Date() } = options
+  const startedAt = now()
+
+  try {
+    await dataStore.updateJobStatus(payload.jobId, JobStatus.RUNNING)
+    const exportRecord = await dataStore.getReportExport(payload.reportExportId)
+    if (!exportRecord) {
+      throw new Error("report export not found")
+    }
+
+    await dataStore.updateReportExport(payload.reportExportId, { status: JobStatus.RUNNING })
+    await dataStore.recordAuditEvent({
+      orgId: payload.orgId,
+      workspaceId: payload.workspaceId ?? null,
+      actorUserId: null,
+      eventType: "report.export_started",
+      entityType: "report_export",
+      entityId: payload.reportExportId,
+      payload: { format: payload.format }
+    })
+
+    const reports = await buildOrgWorkspaceReports(payload.orgId, dataStore)
+    const filteredReports = payload.workspaceId
+      ? reports.filter((report) => report.workspaceId === payload.workspaceId)
+      : reports
+
+    let bytes: Uint8Array
+    let extension: "csv" | "pdf"
+    let mimeType: string
+
+    if (payload.format === ReportExportFormat.PDF) {
+      bytes = await buildReportPdf(filteredReports)
+      extension = "pdf"
+      mimeType = "application/pdf"
+    } else {
+      bytes = buildReportCsv(filteredReports)
+      extension = "csv"
+      mimeType = "text/csv"
+    }
+
+    const checksum = createHash("sha256").update(bytes).digest("hex")
+    const expiresAt = new Date(
+      now().getTime() + EXPORT_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString()
+
+    await dataStore.storeReportExportFile({
+      reportExportId: payload.reportExportId,
+      orgId: payload.orgId,
+      content: bytes,
+      storageBucket: "exports",
+      storagePath: `org/${payload.orgId}/reports/${payload.reportExportId}.${extension}`,
+      fileName: `client-report-${payload.reportExportId}.${extension}`,
+      mimeType,
+      sizeBytes: bytes.byteLength,
+      checksumSha256: checksum,
+      expiresAt
+    })
+
+    await dataStore.recordAuditEvent({
+      orgId: payload.orgId,
+      workspaceId: payload.workspaceId ?? null,
+      actorUserId: null,
+      eventType: "report.export_completed",
+      entityType: "report_export",
+      entityId: payload.reportExportId,
+      payload: { format: payload.format }
+    })
+
+    const endedAt = now()
+    await dataStore.createJobAttempt({
+      jobId: payload.jobId,
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      status: "SUCCEEDED",
+      metrics: {
+        duration_ms: endedAt.getTime() - startedAt.getTime(),
+        rows: filteredReports.length,
+        format: payload.format
+      }
+    })
+
+    await dataStore.updateJobStatus(payload.jobId, JobStatus.SUCCEEDED)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error"
+    await dataStore.updateReportExport(payload.reportExportId, {
+      status: JobStatus.FAILED,
+      lastError: message,
+      completedAt: now().toISOString()
+    })
+    await dataStore.createJobAttempt({
+      jobId: payload.jobId,
+      startedAt: startedAt.toISOString(),
+      endedAt: now().toISOString(),
+      status: "FAILED",
+      error: message,
+      metrics: { format: payload.format }
+    })
+    await dataStore.updateJobStatus(payload.jobId, JobStatus.FAILED, message)
   }
 }

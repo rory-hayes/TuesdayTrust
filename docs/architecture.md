@@ -16,6 +16,8 @@ TuesdayTrust is built as a Supabase-first application with an asynchronous job p
   - Generate signed upload URLs
   - Enqueue background jobs
   - Serve lightweight read APIs
+  - Manage Trust Center allowlists + access requests
+  - Enqueue client report exports (CSV/PDF)
 - **Access control**:
   - Org memberships define baseline roles.
   - When consultant mode is enabled, workspace memberships gate workspace access.
@@ -67,6 +69,8 @@ TuesdayTrust is built as a Supabase-first application with an asynchronous job p
   - A strict state machine (see `docs/schema.md`).
 - **Cancellation and pause**:
   - Admin can pause processing per tenant; worker checks before executing stages.
+ - **Report exports**:
+   - `EXPORT_REPORT` jobs generate CSV/PDF summaries and store in Supabase Storage.
 
 ---
 

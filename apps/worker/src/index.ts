@@ -1,4 +1,4 @@
-import { processQuestionnaireJob } from "./job-runner"
+import { processQuestionnaireJob, processReportExportJob } from "./job-runner"
 import { createSupabaseDataStore } from "./datastore/supabase"
 import { createSupabaseFileStorage } from "./storage/supabase"
 
@@ -36,6 +36,11 @@ async function main() {
 
   const dataStore = createSupabaseDataStore({ url, serviceRoleKey: key })
   const fileStorage = createSupabaseFileStorage({ url, serviceRoleKey: key })
+
+  if (payload?.type === "EXPORT_REPORT") {
+    await processReportExportJob(payload, { dataStore, fileStorage })
+    return
+  }
 
   await processQuestionnaireJob(payload, { dataStore, fileStorage })
 }

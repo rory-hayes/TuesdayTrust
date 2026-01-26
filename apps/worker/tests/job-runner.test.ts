@@ -5,7 +5,6 @@ import PDFDocument from "pdfkit"
 import { randomUUID } from "node:crypto"
 import {
   AnswerStatus,
-  ESTIMATED_TOKENS_PER_QUESTION,
   JobStatus,
   QuestionnaireStatus,
   type Answer,
@@ -13,7 +12,7 @@ import {
   type Questionnaire,
   type QuestionnaireFile
 } from "@tuesdaytrust/shared"
-import { processQuestionnaireJob } from "../src/job-runner"
+import { processQuestionnaireJob, processReportExportJob } from "../src/job-runner"
 import { MemoryDataStore } from "../src/datastore/memory"
 import { MemoryFileStorage } from "../src/storage/memory"
 import type { DataStore } from "../src/datastore/types"
@@ -177,11 +176,7 @@ describe("processQuestionnaireJob", () => {
     )
     expect(exportFile).toBeTruthy()
 
-    const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-      .toISOString()
-      .slice(0, 10)
-    const usage = snapshot.orgUsage.get(`${orgId}:${periodStart}`)
-    expect(usage?.tokensIn).toBe(snapshot.questions.length * ESTIMATED_TOKENS_PER_QUESTION)
+    expect(snapshot.tokenUsageEvents.length).toBe(0)
   })
 
   it("processes DOCX questionnaire and creates export", async () => {
@@ -876,5 +871,87 @@ describe("processQuestionnaireJob", () => {
     )
     expect(updateJobStatus).toHaveBeenCalledWith(jobId, JobStatus.FAILED, "unknown error")
     expect(createJobAttempt).toHaveBeenCalled()
+  })
+})
+
+describe("processReportExportJob", () => {
+  it("creates report export files", async () => {
+    const orgId = randomUUID()
+    const workspaceId = randomUUID()
+    const jobId = randomUUID()
+
+    const memoryStore = new MemoryDataStore()
+    memoryStore.seedWorkspace({ id: workspaceId, orgId, name: "Client Workspace" })
+
+    const questionnaire: Questionnaire = {
+      id: randomUUID(),
+      orgId,
+      workspaceId,
+      title: "Report Q",
+      source: "Seed",
+      status: QuestionnaireStatus.COMPLETED,
+      progressTotal: 1,
+      progressDone: 1,
+      createdBy: randomUUID(),
+      createdAt: new Date().toISOString(),
+      updatedAt: "2026-01-10T00:00:00Z",
+      failedReason: null
+    }
+    memoryStore.seedQuestionnaire(questionnaire)
+    memoryStore.seedAnswer({
+      id: randomUUID(),
+      orgId,
+      workspaceId,
+      title: "Approved",
+      body: "Answer",
+      status: AnswerStatus.APPROVED,
+      ownerUserId: randomUUID(),
+      tags: [],
+      scope: {},
+      sensitivity: "STANDARD",
+      reviewIntervalDays: 90,
+      lastReviewedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    })
+    memoryStore.seedJob({
+      id: jobId,
+      orgId,
+      workspaceId,
+      jobType: "EXPORT_REPORT",
+      status: JobStatus.QUEUED,
+      payload: {},
+      attempts: 0,
+      maxAttempts: 3,
+      nextRunAt: new Date().toISOString(),
+      lockedAt: null,
+      lockedBy: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      lastError: null
+    })
+
+    const reportExport = await memoryStore.createReportExport({
+      orgId,
+      workspaceId,
+      jobId,
+      format: "csv",
+      createdBy: randomUUID()
+    })
+
+    await processReportExportJob(
+      {
+        jobId,
+        orgId,
+        workspaceId,
+        reportExportId: reportExport.id,
+        format: "csv"
+      },
+      { dataStore: memoryStore, fileStorage: new MemoryFileStorage(() => null) }
+    )
+
+    const updated = await memoryStore.getReportExport(reportExport.id)
+    expect(updated?.status).toBe(JobStatus.SUCCEEDED)
+    expect(updated?.storagePath).toContain(`/reports/${reportExport.id}.csv`)
   })
 })

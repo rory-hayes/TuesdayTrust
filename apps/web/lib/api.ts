@@ -194,6 +194,48 @@ export interface TrustCenterShareListResponse {
   shares: TrustCenterShare[]
 }
 
+export interface TrustCenterAllowlistResponse {
+  workspace_id: string
+  allowlist: {
+    answer_ids: string[]
+    evidence_ids: string[]
+  }
+  answers: Array<{ id: string; title: string; last_reviewed_at: string }>
+  evidence: Array<{ id: string; title: string; url: string | null; expires_at: string | null }>
+}
+
+export interface TrustCenterAccessRequestInput {
+  token: string
+  requester_name?: string
+  requester_email?: string
+  requester_company?: string
+  message?: string
+  answer_ids?: string[]
+  evidence_ids?: string[]
+}
+
+export interface TrustCenterAccessRequest {
+  id: string
+  org_id: string
+  workspace_id: string
+  share_id: string | null
+  requester_name: string | null
+  requester_email: string | null
+  requester_company: string | null
+  message: string | null
+  status: string
+  created_at: string
+  reviewed_at: string | null
+  reviewed_by: string | null
+  decision_note: string | null
+  answer_ids?: string[]
+  evidence_ids?: string[]
+}
+
+export interface TrustCenterAccessRequestListResponse {
+  requests: TrustCenterAccessRequest[]
+}
+
 export interface OrgWorkspaceReport {
   workspace_id: string
   name: string
@@ -215,6 +257,42 @@ export interface OrgWorkspaceReport {
 
 export interface OrgWorkspaceReportsResponse {
   workspaces: OrgWorkspaceReport[]
+}
+
+export interface ReportExportInput {
+  format: "csv" | "pdf"
+  workspace_id?: string
+}
+
+export interface ReportExportRecord {
+  id: string
+  org_id: string
+  workspace_id: string | null
+  job_id: string | null
+  format: "csv" | "pdf"
+  status: string
+  storage_bucket: string | null
+  storage_path: string | null
+  file_name: string | null
+  mime_type: string | null
+  size_bytes: number | null
+  checksum_sha256: string | null
+  expires_at: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+  last_error: string | null
+  signed_url?: string | null
+}
+
+export interface ReportExportResponse {
+  report_export: ReportExportRecord
+  job_id: string
+}
+
+export interface ReportExportListResponse {
+  exports: ReportExportRecord[]
 }
 
 function getApiBaseUrl() {
@@ -467,8 +545,80 @@ export function revokeTrustCenterShare(shareId: string) {
   })
 }
 
+export function fetchTrustCenterAllowlist(workspaceId: string) {
+  return requestJson<TrustCenterAllowlistResponse>(
+    `/api/trust-center/allowlist?workspace_id=${encodeURIComponent(workspaceId)}`,
+    { method: "GET" }
+  )
+}
+
+export function updateTrustCenterAllowlist(input: {
+  workspace_id: string
+  answer_ids: string[]
+  evidence_ids: string[]
+}) {
+  return requestJson<TrustCenterAllowlistResponse>("/api/trust-center/allowlist", {
+    method: "POST",
+    body: JSON.stringify(input)
+  })
+}
+
+export async function createTrustCenterAccessRequest(input: TrustCenterAccessRequestInput) {
+  const response = await fetch(`${getApiBaseUrl()}/api/trust-center/access-request`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  })
+
+  const payload = (await response.json()) as { error?: ApiError; request?: TrustCenterAccessRequest }
+  if (!response.ok || payload.error) {
+    return {
+      data: null,
+      error: payload.error ?? {
+        code: "INTERNAL_ERROR",
+        message: "Unexpected error"
+      }
+    } satisfies ApiResult<{ request: TrustCenterAccessRequest }>
+  }
+  return { data: payload as { request: TrustCenterAccessRequest }, error: null }
+}
+
+export function fetchTrustCenterAccessRequests(workspaceId: string) {
+  return requestJson<TrustCenterAccessRequestListResponse>(
+    `/api/trust-center/access-requests?workspace_id=${encodeURIComponent(workspaceId)}`,
+    { method: "GET" }
+  )
+}
+
+export function updateTrustCenterAccessRequest(
+  requestId: string,
+  input: { status: "APPROVED" | "DENIED"; decision_note?: string; grant_requested?: boolean }
+) {
+  return requestJson<{ request: TrustCenterAccessRequest }>(
+    `/api/trust-center/access-requests/${requestId}`,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  )
+}
+
 export function fetchOrgWorkspaceReports(orgId: string) {
   return requestJson<OrgWorkspaceReportsResponse>(`/api/orgs/${orgId}/reports`, {
+    method: "GET"
+  })
+}
+
+export function createReportExport(orgId: string, input: ReportExportInput) {
+  return requestJson<ReportExportResponse>(`/api/orgs/${orgId}/reports/export`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  })
+}
+
+export function fetchReportExports(orgId: string, workspaceId?: string) {
+  const params = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""
+  return requestJson<ReportExportListResponse>(`/api/orgs/${orgId}/reports/exports${params}`, {
     method: "GET"
   })
 }

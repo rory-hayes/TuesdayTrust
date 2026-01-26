@@ -193,3 +193,19 @@ Format:
 - Decision: Allow admins to override roles per workspace membership while keeping org role as the default at invite time.
 - Alternatives: Force workspace roles to always mirror org role.
 - Consequences: Workspace access decisions must use workspace membership role when consultant mode is enabled.
+
+## ADR-024 — Token Usage Telemetry (Replace Estimates)
+- Date: 2026-01-26
+- Status: Accepted
+- Context: Estimated token usage is insufficient for billing accuracy and budget enforcement.
+- Decision: Record token usage events and compute monthly usage from telemetry; jobs only reference actual usage to enforce budgets.
+- Alternatives: Continue estimating tokens from question counts.
+- Consequences: Token usage storage and reporting must be implemented before billing integration.
+
+## ADR-025 — Trust Center Allowlists + Access Requests
+- Date: 2026-01-26
+- Status: Accepted
+- Context: Public Trust Center sharing requires granular control and a way for clients to request more access.
+- Decision: Add per-answer/evidence allowlists and access request workflows with admin approval and audit events.
+- Alternatives: Keep Trust Center internal only or share everything by default.
+- Consequences: Admins must maintain allowlists; access requests are now part of the Trust Center workflow.

@@ -42,6 +42,7 @@ Implementation will live in Supabase Postgres with RLS enabled.
 ### job_type
 - `PROCESS_QUESTIONNAIRE`
 - `EXPORT_QUESTIONNAIRE`
+- `EXPORT_REPORT`
 - `REINDEX_ANSWERS`
 - `DEDUPE_ANSWERS`
 
@@ -144,6 +145,50 @@ Implementation will live in Supabase Postgres with RLS enabled.
 - `expires_at` (timestamptz, nullable)
 - `revoked_at` (timestamptz, nullable)
 - `created_by` (uuid)
+- `created_at`
+
+### trust_center_allowlist_answers
+- `id` (uuid, pk)
+- `org_id` (uuid, fk)
+- `workspace_id` (uuid, fk)
+- `answer_id` (uuid, fk answers)
+- `created_by` (uuid)
+- `created_at`
+
+### trust_center_allowlist_evidence
+- `id` (uuid, pk)
+- `org_id` (uuid, fk)
+- `workspace_id` (uuid, fk)
+- `evidence_id` (uuid, fk evidence)
+- `created_by` (uuid)
+- `created_at`
+
+### trust_center_access_requests
+- `id` (uuid, pk)
+- `org_id` (uuid, fk)
+- `workspace_id` (uuid, fk)
+- `share_id` (uuid, fk trust_center_shares, nullable)
+- `requester_name` (text, nullable)
+- `requester_email` (text, nullable)
+- `requester_company` (text, nullable)
+- `message` (text, nullable)
+- `status` (text) — PENDING | APPROVED | DENIED
+- `created_at`, `reviewed_at`, `reviewed_by`, `decision_note`
+
+### trust_center_access_request_answers
+- `id` (uuid, pk)
+- `request_id` (uuid, fk trust_center_access_requests)
+- `org_id` (uuid, fk)
+- `workspace_id` (uuid, fk)
+- `answer_id` (uuid, fk answers)
+- `created_at`
+
+### trust_center_access_request_evidence
+- `id` (uuid, pk)
+- `request_id` (uuid, fk trust_center_access_requests)
+- `org_id` (uuid, fk)
+- `workspace_id` (uuid, fk)
+- `evidence_id` (uuid, fk evidence)
 - `created_at`
 
 ### workspace_memberships
@@ -328,6 +373,39 @@ Implementation will live in Supabase Postgres with RLS enabled.
 - `metrics` (jsonb) — tokens, duration_ms, counts
 - `created_at`
 
+### report_exports
+- `id` (uuid, pk)
+- `org_id` (uuid, fk)
+- `workspace_id` (uuid, fk, nullable)
+- `job_id` (uuid, fk jobs, nullable)
+- `format` (text) — csv | pdf
+- `status` (job_status)
+- `storage_bucket` (text, nullable)
+- `storage_path` (text, nullable)
+- `file_name` (text, nullable)
+- `mime_type` (text, nullable)
+- `size_bytes` (bigint, nullable)
+- `checksum_sha256` (text, nullable)
+- `expires_at` (timestamptz, nullable)
+- `created_by` (uuid)
+- `created_at`, `updated_at`, `completed_at`
+- `last_error` (text, nullable)
+
+### token_usage_events
+- `id` (uuid, pk)
+- `org_id` (uuid, fk)
+- `workspace_id` (uuid, fk, nullable)
+- `job_id` (uuid, fk jobs, nullable)
+- `questionnaire_id` (uuid, fk questionnaires, nullable)
+- `event_type` (text)
+- `provider` (text, nullable)
+- `model` (text, nullable)
+- `tokens_in` (int)
+- `tokens_out` (int)
+- `cost_usd` (numeric)
+- `metadata` (jsonb)
+- `created_at`
+
 ---
 
 ## 4) Indexes (minimum)
@@ -339,6 +417,11 @@ Implementation will live in Supabase Postgres with RLS enabled.
 - pgvector index on `answer_embeddings.embedding` (HNSW/IVFFLAT depending on pgvector version)
 - `audit_events(org_id, created_at desc)`
 - `jobs(status, next_run_at)`
+- `trust_center_allowlist_answers(workspace_id)`
+- `trust_center_allowlist_evidence(workspace_id)`
+- `trust_center_access_requests(workspace_id, created_at desc)`
+- `report_exports(org_id, created_at desc)`
+- `token_usage_events(org_id, created_at desc)`
 
 ---
 

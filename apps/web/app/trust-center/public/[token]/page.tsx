@@ -1,7 +1,22 @@
 "use client"
 
 import React from "react"
-import { Heading, Text, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@tuesdaytrust/ui"
+import {
+  Button,
+  Field,
+  FieldGroup,
+  Heading,
+  Input,
+  Text,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea
+} from "@tuesdaytrust/ui"
+import { createTrustCenterAccessRequest } from "../../../lib/api"
 
 interface PublicTrustCenterResponse {
   share_id: string
@@ -19,6 +34,13 @@ interface PublicTrustCenterResponse {
 export default function PublicTrustCenterPage({ params }: { params: { token: string } }) {
   const [data, setData] = React.useState<PublicTrustCenterResponse | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+  const [requestStatus, setRequestStatus] = React.useState<string | null>(null)
+  const [requestForm, setRequestForm] = React.useState({
+    name: "",
+    email: "",
+    company: "",
+    message: ""
+  })
 
   React.useEffect(() => {
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_FUNCTIONS_URL ?? ""
@@ -135,6 +157,79 @@ export default function PublicTrustCenterPage({ params }: { params: { token: str
           </Table>
         </div>
       ) : null}
+
+      <div className="rounded-xl border border-zinc-950/10 bg-white p-4 dark:border-white/10 dark:bg-zinc-900">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <Text className="text-sm font-semibold text-zinc-950 dark:text-white">Request more access</Text>
+            <Text className="text-sm text-zinc-500 dark:text-zinc-400">
+              Ask the security team to share additional details.
+            </Text>
+          </div>
+          {requestStatus ? (
+            <Text className="text-sm text-amber-600">{requestStatus}</Text>
+          ) : null}
+        </div>
+
+        <form
+          className="mt-4"
+          onSubmit={async (event) => {
+            event.preventDefault()
+            setRequestStatus(null)
+            const result = await createTrustCenterAccessRequest({
+              token: params.token,
+              requester_name: requestForm.name,
+              requester_email: requestForm.email,
+              requester_company: requestForm.company,
+              message: requestForm.message
+            })
+            if (result.error) {
+              setRequestStatus(result.error.message)
+              return
+            }
+            setRequestStatus("Request submitted.")
+            setRequestForm({ name: "", email: "", company: "", message: "" })
+          }}
+        >
+          <FieldGroup>
+            <Field>
+              <label className="text-sm font-medium text-zinc-950 dark:text-white">Name</label>
+              <Input
+                value={requestForm.name}
+                onChange={(event) => setRequestForm((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Jane Doe"
+              />
+            </Field>
+            <Field>
+              <label className="text-sm font-medium text-zinc-950 dark:text-white">Email</label>
+              <Input
+                value={requestForm.email}
+                onChange={(event) => setRequestForm((prev) => ({ ...prev, email: event.target.value }))}
+                placeholder="jane@company.com"
+              />
+            </Field>
+            <Field>
+              <label className="text-sm font-medium text-zinc-950 dark:text-white">Company</label>
+              <Input
+                value={requestForm.company}
+                onChange={(event) => setRequestForm((prev) => ({ ...prev, company: event.target.value }))}
+                placeholder="Company name"
+              />
+            </Field>
+            <Field className="sm:col-span-2">
+              <label className="text-sm font-medium text-zinc-950 dark:text-white">Request details</label>
+              <Textarea
+                value={requestForm.message}
+                onChange={(event) => setRequestForm((prev) => ({ ...prev, message: event.target.value }))}
+                placeholder="Tell us what additional evidence or answers you need."
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <Button type="submit">Submit request</Button>
+            </div>
+          </FieldGroup>
+        </form>
+      </div>
     </div>
   )
 }
