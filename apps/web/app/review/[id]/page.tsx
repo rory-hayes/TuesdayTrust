@@ -23,6 +23,18 @@ import { useWorkspace } from "../../../lib/use-workspace"
 export default function ReviewPage() {
   const { role } = useWorkspace()
   const selected = sampleReviewQueue[0]
+  if (!selected) {
+    return (
+      <div className="space-y-4">
+        <Heading level={1} className="text-zinc-950 dark:text-white">
+          Review Queue
+        </Heading>
+        <Text className="text-zinc-500 dark:text-zinc-400">
+          No review items available yet.
+        </Text>
+      </div>
+    )
+  }
   const scope = selected.answer?.scope ?? { products: [], regions: [], tiers: [] }
   const canReview = canReviewAnswers(role)
   const canEdit = canEditAnswers(role)
