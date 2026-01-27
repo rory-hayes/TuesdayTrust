@@ -16,7 +16,7 @@ import {
   TableRow,
   Textarea
 } from "@tuesdaytrust/ui"
-import { createTrustCenterAccessRequest } from "../../../lib/api"
+import { createTrustCenterAccessRequest } from "../../../../lib/api"
 
 interface PublicTrustCenterResponse {
   share_id: string
