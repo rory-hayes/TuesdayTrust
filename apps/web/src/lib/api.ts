@@ -52,8 +52,27 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `API request failed with status ${response.status}`);
+    const rawBody = await response.text();
+    let message = rawBody;
+
+    if (rawBody) {
+      try {
+        const parsed = JSON.parse(rawBody) as { message?: string; error?: string };
+        message = parsed.message ?? parsed.error ?? rawBody;
+      } catch {
+        message = rawBody;
+      }
+    }
+
+    if (!message) {
+      message = `API request failed with status ${response.status}`;
+    }
+
+    if (response.status === 401) {
+      message = 'Authentication required. Configure Clerk auth for both web and API deployments.';
+    }
+
+    throw new Error(message);
   }
 
   return (await response.json()) as T;
