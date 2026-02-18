@@ -1,6 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 
 export async function registerHealthRoute(app: FastifyInstance): Promise<void> {
+  app.route({
+    method: ['GET', 'HEAD'],
+    url: '/',
+    handler: async (_request, reply) => {
+      reply.code(200);
+      return {
+        status: 'ok'
+      };
+    }
+  });
+
   app.get('/health', async (_request, reply) => {
     let db = 'down';
     let redis = 'down';

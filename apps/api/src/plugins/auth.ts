@@ -80,7 +80,7 @@ const authPlugin: FastifyPluginAsync = async (app) => {
 
   app.addHook('onRequest', async (request, reply) => {
     const requestUrl = request.raw.url ?? request.url;
-    if (requestUrl.startsWith('/health') || request.method === 'OPTIONS') {
+    if (requestUrl === '/' || requestUrl.startsWith('/health') || request.method === 'OPTIONS') {
       request.auth = {
         orgId: process.env.DEV_AUTH_ORG_ID ?? 'org_dev',
         userId: process.env.DEV_AUTH_USER_ID ?? 'user_dev',

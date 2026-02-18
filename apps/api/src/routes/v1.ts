@@ -559,6 +559,12 @@ function summarizeQuestionStatuses(questions: QuestionWithAnswer[]) {
 
 export async function registerV1Routes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', async (request, reply) => {
+    const requestUrl = request.raw.url ?? request.url;
+
+    if (!requestUrl.startsWith('/v1')) {
+      return;
+    }
+
     try {
       await requireOrgMember(app.services.prisma, request.auth.userId, request.auth.orgId);
     } catch (error) {
