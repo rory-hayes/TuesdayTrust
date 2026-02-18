@@ -1,5 +1,13 @@
 import type { ReactNode } from 'react';
 
+import {
+  Table as CatalystTable,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '../catalyst/table';
 import { cn } from '../lib/cn';
 
 export type TableColumn<T> = {
@@ -18,33 +26,27 @@ export type TableProps<T> = {
 
 export function Table<T>({ columns, rows, getRowKey, className }: TableProps<T>) {
   return (
-    <div className={cn('overflow-x-auto rounded-[var(--eq-radius-lg)] border border-[var(--eq-color-border)] bg-[var(--eq-color-surface)]', className)}>
-      <table className="min-w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-[var(--eq-color-border)] bg-[var(--eq-color-surface-alt)]">
-            {columns.map((column) => (
-              <th
-                className={cn('px-4 py-3 font-medium text-[var(--eq-color-fg-muted)]', column.className)}
-                key={column.key}
-                scope="col"
-              >
-                {column.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr className="border-b border-[var(--eq-color-border)] last:border-0" key={getRowKey(row)}>
-              {columns.map((column) => (
-                <td className={cn('px-4 py-3 text-[var(--eq-color-fg)]', column.className)} key={column.key}>
-                  {column.render ? column.render(row) : (row as Record<string, ReactNode>)[column.key]}
-                </td>
-              ))}
-            </tr>
+    <CatalystTable className={cn('rounded-xl border border-zinc-950/10 bg-white dark:border-white/10 dark:bg-zinc-900', className)} grid>
+      <TableHead>
+        <TableRow>
+          {columns.map((column) => (
+            <TableHeader className={cn('text-xs uppercase tracking-wide text-zinc-500', column.className)} key={column.key}>
+              {column.header}
+            </TableHeader>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={getRowKey(row)}>
+            {columns.map((column) => (
+              <TableCell className={cn('align-top text-zinc-900 dark:text-zinc-100', column.className)} key={column.key}>
+                {column.render ? column.render(row) : (row as Record<string, ReactNode>)[column.key]}
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </CatalystTable>
   );
 }

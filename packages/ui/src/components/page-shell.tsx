@@ -28,11 +28,17 @@ export function PageShell({
   };
 
   return (
-    <div className="min-h-screen bg-[var(--eq-color-bg-subtle)] text-[var(--eq-color-fg)] md:flex">
-      <Sidebar activeHref={activeHref} items={navItems} />
-      <div className="flex min-h-screen flex-1 flex-col">
+    <div className="relative min-h-svh bg-zinc-100 text-zinc-950 dark:bg-zinc-950 dark:text-white">
+      <div className="fixed inset-y-0 left-0 hidden w-64 p-2 md:block">
+        <Sidebar activeHref={activeHref} items={navItems} />
+      </div>
+      <div className="flex min-h-svh flex-col md:pl-64">
         <Topbar {...topbarProps} />
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex-1 p-6 md:p-8">
+          <div className="mx-auto max-w-6xl rounded-2xl bg-white p-6 shadow-xs ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10 md:p-8">
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );

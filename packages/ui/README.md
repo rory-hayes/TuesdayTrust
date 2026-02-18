@@ -1,25 +1,28 @@
 # @evidenceq/ui
 
 This package is the single source of truth for UI primitives and layout wrappers used by `apps/web`.
+The current wrappers are already backed by Catalyst (Tailwind Plus UI kit) primitives.
 
 ## Tailwind Plus integration workflow
 
-1. Keep licensed Tailwind Plus source snippets in `packages/ui/tailwind-plus-kit` for reference only.
-2. Copy the needed snippet structure into one of the curated components under `src/components/*`.
-3. Adapt class names to EvidenceQ tokens in `src/styles/tokens.css` before merging.
+1. Keep licensed Tailwind Plus source snippets in `packages/ui/tailwind-plus-kit` and `catalyst-ui-kit-golden-copy` for reference.
+2. Update or add Catalyst primitives in `src/catalyst/*`.
+3. Keep app-facing APIs stable by wrapping those primitives in `src/components/*`.
 4. Never import vendor kit files directly from app code.
 
 ## Where to paste Tailwind Plus components
 
-- `src/components/page-shell.tsx` for app layout shells.
-- `src/components/sidebar.tsx` for navigation variants.
-- `src/components/topbar.tsx` for page headers and action bars.
-- `src/components/button.tsx` for button variants.
-- `src/components/input.tsx` for form controls.
-- `src/components/table.tsx` for questionnaire lists.
-- `src/components/status-pill.tsx` for state badges.
-- `src/components/empty-state.tsx` for empty and onboarding blocks.
-- `src/components/modal-shell.tsx` for dialogs/drawers.
+- Catalyst primitives live in `src/catalyst/*`.
+- App-stable wrappers live in:
+  - `src/components/page-shell.tsx`
+  - `src/components/sidebar.tsx`
+  - `src/components/topbar.tsx`
+  - `src/components/button.tsx`
+  - `src/components/input.tsx`
+  - `src/components/table.tsx`
+  - `src/components/status-pill.tsx`
+  - `src/components/empty-state.tsx`
+  - `src/components/modal-shell.tsx`
 
 ## Rules
 

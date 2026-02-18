@@ -1,3 +1,12 @@
+import { Badge } from '../catalyst/badge';
+import {
+  Sidebar as CatalystSidebar,
+  SidebarBody,
+  SidebarHeader,
+  SidebarItem as CatalystSidebarItem,
+  SidebarLabel,
+  SidebarSection
+} from '../catalyst/sidebar';
 import { cn } from '../lib/cn';
 
 export type SidebarItem = {
@@ -13,36 +22,31 @@ export type SidebarProps = {
 
 export function Sidebar({ items, activeHref }: SidebarProps) {
   return (
-    <aside className="w-full border-r border-[var(--eq-color-border)] bg-[var(--eq-color-surface)] md:w-64">
-      <div className="border-b border-[var(--eq-color-border)] px-4 py-4">
-        <p className="text-xs font-medium uppercase tracking-wider text-[var(--eq-color-fg-muted)]">EvidenceQ</p>
-        <p className="mt-1 text-sm text-[var(--eq-color-fg)]">Consultant workspace</p>
-      </div>
-      <nav className="space-y-1 p-3">
+    <aside className="w-full bg-white ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10 md:w-64">
+      <CatalystSidebar>
+        <SidebarHeader>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">EvidenceQ</p>
+          <p className="text-sm text-zinc-700 dark:text-zinc-200">Consultant workspace</p>
+        </SidebarHeader>
+        <SidebarBody>
+          <SidebarSection>
         {items.map((item) => {
           const isActive = activeHref === item.href || activeHref.startsWith(`${item.href}/`);
 
           return (
-            <a
-              className={cn(
-                'flex items-center justify-between rounded-[var(--eq-radius-md)] px-3 py-2 text-sm transition-colors',
-                isActive
-                  ? 'bg-[var(--eq-color-accent-soft)] text-[var(--eq-color-accent-strong)]'
-                  : 'text-[var(--eq-color-fg-muted)] hover:bg-[var(--eq-color-surface-alt)] hover:text-[var(--eq-color-fg)]'
-              )}
-              href={item.href}
-              key={item.href}
-            >
-              <span>{item.label}</span>
+            <CatalystSidebarItem current={isActive} href={item.href} key={item.href}>
+              <SidebarLabel>{item.label}</SidebarLabel>
               {item.badge ? (
-                <span className="rounded-full bg-[var(--eq-color-surface-alt)] px-2 py-0.5 text-xs text-[var(--eq-color-fg-muted)]">
+                <Badge className={cn('ml-auto')} color="zinc">
                   {item.badge}
-                </span>
+                </Badge>
               ) : null}
-            </a>
+            </CatalystSidebarItem>
           );
         })}
-      </nav>
+          </SidebarSection>
+        </SidebarBody>
+      </CatalystSidebar>
     </aside>
   );
 }

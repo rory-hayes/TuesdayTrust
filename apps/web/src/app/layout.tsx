@@ -12,7 +12,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html className="text-zinc-950 antialiased dark:bg-zinc-950 dark:text-white" lang="en">
+      <head>
+        <link href="https://rsms.me/" rel="preconnect" />
+        <link href="https://rsms.me/inter/inter.css" rel="stylesheet" />
+      </head>
       <body>
         <SentryInit />
         {children}

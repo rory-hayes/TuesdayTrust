@@ -1,5 +1,9 @@
 import type { ReactNode } from 'react';
 
+import { Heading } from '../catalyst/heading';
+import { Navbar, NavbarSection, NavbarSpacer } from '../catalyst/navbar';
+import { Text } from '../catalyst/text';
+
 export type TopbarProps = {
   title: string;
   subtitle?: string;
@@ -8,14 +12,21 @@ export type TopbarProps = {
 
 export function Topbar({ title, subtitle, rightSlot }: TopbarProps) {
   return (
-    <header className="sticky top-0 z-10 border-b border-[var(--eq-color-border)] bg-[var(--eq-color-surface)]/95 px-6 py-4 backdrop-blur-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-semibold text-[var(--eq-color-fg)]">{title}</h1>
-          {subtitle ? <p className="mt-1 text-sm text-[var(--eq-color-fg-muted)]">{subtitle}</p> : null}
-        </div>
-        {rightSlot ? <div className="shrink-0">{rightSlot}</div> : null}
-      </div>
+    <header className="sticky top-0 z-20 border-b border-zinc-950/10 bg-white/90 px-6 py-3 backdrop-blur-sm dark:border-white/10 dark:bg-zinc-900/90">
+      <Navbar>
+        <NavbarSection className="min-w-0">
+          <div className="min-w-0">
+            <Heading className="truncate text-xl/7 sm:text-lg/7" level={1}>
+              {title}
+            </Heading>
+            {subtitle ? (
+              <Text className="truncate text-sm/5 text-zinc-500 dark:text-zinc-400">{subtitle}</Text>
+            ) : null}
+          </div>
+        </NavbarSection>
+        <NavbarSpacer />
+        {rightSlot ? <NavbarSection>{rightSlot}</NavbarSection> : null}
+      </Navbar>
     </header>
   );
 }

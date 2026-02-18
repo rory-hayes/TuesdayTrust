@@ -1,12 +1,13 @@
+import { Badge } from '../catalyst/badge';
 import { cn } from '../lib/cn';
 
 type StatusTone = 'neutral' | 'success' | 'warning' | 'danger';
 
-const toneClasses: Record<StatusTone, string> = {
-  neutral: 'bg-[var(--eq-color-surface-alt)] text-[var(--eq-color-fg-muted)]',
-  success: 'bg-emerald-100 text-emerald-700',
-  warning: 'bg-amber-100 text-amber-800',
-  danger: 'bg-rose-100 text-rose-700'
+const toneColors: Record<StatusTone, 'zinc' | 'emerald' | 'amber' | 'rose'> = {
+  neutral: 'zinc',
+  success: 'emerald',
+  warning: 'amber',
+  danger: 'rose'
 };
 
 export type StatusPillProps = {
@@ -17,14 +18,8 @@ export type StatusPillProps = {
 
 export function StatusPill({ label, tone = 'neutral', className }: StatusPillProps) {
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium',
-        toneClasses[tone],
-        className
-      )}
-    >
+    <Badge className={cn('uppercase tracking-wide', className)} color={toneColors[tone]}>
       {label}
-    </span>
+    </Badge>
   );
 }
