@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/apps/worker/src/index.js",
+    "start": "tsx src/index.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -21,11 +21,11 @@
     "openai": "^5.12.2",
     "pdfjs-dist": "^5.4.394",
     "pino": "^9.13.1",
+    "tsx": "^4.20.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "tsx": "^4.20.3",
     "typescript": "^5.9.2"
   }
 }
