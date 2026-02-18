@@ -79,7 +79,8 @@ const authPlugin: FastifyPluginAsync = async (app) => {
   const jwks = issuer ? createRemoteJWKSet(new URL(`${issuer.replace(/\/$/, '')}/.well-known/jwks.json`)) : null;
 
   app.addHook('onRequest', async (request, reply) => {
-    if (request.url === '/health' || request.method === 'OPTIONS') {
+    const requestUrl = request.raw.url ?? request.url;
+    if (requestUrl.startsWith('/health') || request.method === 'OPTIONS') {
       request.auth = {
         orgId: process.env.DEV_AUTH_ORG_ID ?? 'org_dev',
         userId: process.env.DEV_AUTH_USER_ID ?? 'user_dev',

@@ -19,7 +19,8 @@ export async function registerHealthRoute(app: FastifyInstance): Promise<void> {
       redis = 'down';
     }
 
-    const healthy = db === 'ok' && redis === 'ok';
+    // Keep /health as a liveness signal for rollout; Redis remains reported for observability.
+    const healthy = db === 'ok';
 
     if (!healthy) {
       reply.code(503);

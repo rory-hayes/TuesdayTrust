@@ -45,7 +45,8 @@ export async function buildServer() {
     requestIdLogLabel: 'requestId'
   });
   const prisma = createPrismaClient();
-  const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  const redisUrl = process.env.REDIS_INTERNAL_URL ?? process.env.REDIS_URL ?? 'redis://localhost:6379';
+  const redis = new Redis(redisUrl, {
     maxRetriesPerRequest: null,
     enableReadyCheck: true
   });

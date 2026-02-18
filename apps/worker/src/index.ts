@@ -2041,7 +2041,7 @@ async function start(): Promise<void> {
     throw new Error('Queue names are not configured');
   }
 
-  const redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379';
+  const redisUrl = process.env.REDIS_INTERNAL_URL ?? process.env.REDIS_URL ?? 'redis://localhost:6379';
   const prisma = createPrismaClient();
   const storage = createStorageAdapter();
   const queueConnection = new Redis(redisUrl, { maxRetriesPerRequest: null });
