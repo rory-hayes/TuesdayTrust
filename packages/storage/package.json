@@ -1,0 +1,19 @@
+{
+  "name": "@evidenceq/storage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@evidenceq/shared": "workspace:*",
+    "@vercel/blob": "^0.27.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

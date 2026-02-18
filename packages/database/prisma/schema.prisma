@@ -1,0 +1,423 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  CONSULTANT
+  REVIEWER
+}
+
+enum KBDocumentStatus {
+  UPLOADED
+  INDEXING
+  READY
+  FAILED
+}
+
+enum QuestionnaireProjectStatus {
+  DRAFT
+  MAPPED
+  PARSED
+  READY
+}
+
+enum QuestionItemStatus {
+  NEW
+  READY_FOR_ANSWER
+}
+
+enum AnswerDraftStatus {
+  DRAFT
+  READY
+  NEEDS_REVIEW
+  APPROVED
+  REJECTED
+  INSUFFICIENT_EVIDENCE
+}
+
+enum ProjectFileKind {
+  ORIGINAL_XLSX
+  EXPORT_XLSX
+}
+
+enum GapStatus {
+  OPEN
+  RESOLVED
+}
+
+enum ApprovalEventType {
+  APPROVED
+  REJECTED
+  EDITED
+}
+
+enum JobRunType {
+  KB_INDEX
+  PROJECT_PARSE
+  ANSWER_GENERATE
+  EXPORT_XLSX
+  RETENTION_PURGE
+}
+
+enum JobRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model Org {
+  id               String                 @id @default(cuid())
+  name             String
+  slug             String                 @unique
+  retentionDays    Int                    @default(90)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  users            User[]
+  clientWorkspaces ClientWorkspace[]
+  kbDocuments      KBDocument[]
+  kbChunks         KBChunk[]
+  projects         QuestionnaireProject[]
+  projectFiles     ProjectFile[]
+  questionItems    QuestionItem[]
+  answerDrafts     AnswerDraft[]
+  auditLogs        AuditLog[]
+  approvalEvents   ApprovalEvent[]
+  gapItems         GapItem[]
+  usageEvents      OpenAIUsageEvent[]
+  jobRuns          JobRun[]
+}
+
+model User {
+  id                      String            @id @default(cuid())
+  orgId                   String
+  email                   String
+  name                    String?
+  role                    UserRole          @default(CONSULTANT)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  org                     Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdClientWorkspaces ClientWorkspace[] @relation("ClientWorkspaceCreatedBy")
+  uploadedKBDocuments     KBDocument[]      @relation("KBDocumentUploadedBy")
+  createdProjects         QuestionnaireProject[] @relation("ProjectCreatedBy")
+  uploadedProjectFiles    ProjectFile[]     @relation("ProjectFileUploadedBy")
+  auditLogs               AuditLog[]        @relation("AuditLogActor")
+  approvalEvents          ApprovalEvent[]   @relation("ApprovalEventActor")
+
+  @@unique([orgId, email])
+  @@index([orgId])
+}
+
+model ClientWorkspace {
+  id           String                 @id @default(cuid())
+  orgId        String
+  createdById  String?
+  name         String
+  slug         String
+  primaryDomain String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  org          Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy    User?                  @relation("ClientWorkspaceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  kbDocuments  KBDocument[]
+  kbChunks     KBChunk[]
+  projects     QuestionnaireProject[]
+  projectFiles ProjectFile[]
+  questionItems QuestionItem[]
+  answerDrafts AnswerDraft[]
+  auditLogs    AuditLog[]
+  approvalEvents ApprovalEvent[]
+  gapItems     GapItem[]
+  usageEvents  OpenAIUsageEvent[]
+  jobRuns      JobRun[]
+
+  @@unique([orgId, slug])
+  @@index([orgId])
+}
+
+model KBDocument {
+  id                String           @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String
+  uploadedById      String?
+  filename          String
+  blobUrl           String
+  blobPathname      String?
+  mimeType          String
+  sizeBytes         Int
+  status            KBDocumentStatus @default(UPLOADED)
+  indexVersion      Int              @default(1)
+  indexProgress     Int              @default(0)
+  indexJobStatus    JobRunStatus     @default(QUEUED)
+  errorJson         Json?
+  failureReason     String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  org               Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace  @relation(fields: [clientWorkspaceId], references: [id], onDelete: Cascade)
+  uploadedBy        User?            @relation("KBDocumentUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+  chunks            KBChunk[]
+
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+}
+
+model KBChunk {
+  id                String          @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String
+  kbDocumentId      String
+  chunkIndex        Int
+  text              String
+  citationDoc       String?
+  citationPage      Int?
+  citationParagraph Int?
+  citationSection   String?
+  citationSheet     String?
+  citationCell      String?
+  embedding         Unsupported("vector")?
+  createdAt         DateTime        @default(now())
+  org               Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace @relation(fields: [clientWorkspaceId], references: [id], onDelete: Cascade)
+  kbDocument        KBDocument      @relation(fields: [kbDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([kbDocumentId, chunkIndex])
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+}
+
+model QuestionnaireProject {
+  id                  String                     @id @default(cuid())
+  orgId               String
+  clientWorkspaceId   String
+  createdById         String?
+  name                String
+  status              QuestionnaireProjectStatus @default(DRAFT)
+  parseProgress       Int                        @default(0)
+  parseJobStatus      JobRunStatus               @default(QUEUED)
+  generationProgress  Int                        @default(0)
+  generationJobStatus JobRunStatus               @default(QUEUED)
+  exportProgress      Int                        @default(0)
+  exportJobStatus     JobRunStatus               @default(QUEUED)
+  exportVersion       Int                        @default(0)
+  lastKbVersionHash   String?
+  errorJson           Json?
+  filename            String
+  originalBlobUrl     String
+  originalBlobPathname String?
+  sheetName           String?
+  mappings            Json?
+  parseError          String?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  org                 Org                        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace     ClientWorkspace            @relation(fields: [clientWorkspaceId], references: [id], onDelete: Cascade)
+  createdBy           User?                      @relation("ProjectCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  files               ProjectFile[]
+  questionItems       QuestionItem[]
+  answerDrafts        AnswerDraft[]
+  auditLogs           AuditLog[]
+  approvalEvents      ApprovalEvent[]
+  gapItems            GapItem[]
+  usageEvents         OpenAIUsageEvent[]
+  jobRuns             JobRun[]
+
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+}
+
+model ProjectFile {
+  id                String          @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String
+  projectId         String
+  uploadedById      String?
+  kind              ProjectFileKind
+  filename          String
+  blobUrl           String
+  blobPathname      String?
+  mimeType          String
+  sizeBytes         Int?
+  exportVersion     Int?
+  sourceKbVersionHash String?
+  generatedAt       DateTime?
+  encryptionMeta    Json?
+  createdAt         DateTime        @default(now())
+  org               Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace @relation(fields: [clientWorkspaceId], references: [id], onDelete: Cascade)
+  project           QuestionnaireProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedBy        User?           @relation("ProjectFileUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+  @@index([projectId])
+}
+
+model QuestionItem {
+  id                String             @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String
+  projectId         String
+  rowIndex          Int
+  questionText      String
+  answerCellRef     String?
+  evidenceCellRef   String?
+  status            QuestionItemStatus @default(NEW)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  org               Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace    @relation(fields: [clientWorkspaceId], references: [id], onDelete: Cascade)
+  project           QuestionnaireProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  answerDraft       AnswerDraft?
+  approvalEvents    ApprovalEvent[]
+  gapItems          GapItem[]
+
+  @@unique([projectId, rowIndex])
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+}
+
+model AnswerDraft {
+  id                String            @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String
+  projectId         String
+  questionItemId    String            @unique
+  status            AnswerDraftStatus @default(DRAFT)
+  answerText        String?
+  citationsJson     Json?
+  confidence        Float?
+  sourceKbVersionHash String?
+  generationFingerprint String?
+  generatedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  org               Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace   @relation(fields: [clientWorkspaceId], references: [id], onDelete: Cascade)
+  project           QuestionnaireProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  questionItem      QuestionItem      @relation(fields: [questionItemId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+  @@index([projectId])
+  @@index([status])
+}
+
+model AuditLog {
+  id                String          @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String?
+  projectId         String?
+  actorUserId       String?
+  action            String
+  metadata          Json?
+  createdAt         DateTime        @default(now())
+  org               Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace? @relation(fields: [clientWorkspaceId], references: [id], onDelete: SetNull)
+  project           QuestionnaireProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  actor             User?           @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+  @@index([projectId])
+}
+
+model ApprovalEvent {
+  id                String            @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String
+  projectId         String
+  questionItemId    String
+  actorUserId       String?
+  eventType         ApprovalEventType
+  fromStatus        AnswerDraftStatus?
+  toStatus          AnswerDraftStatus?
+  metadata          Json?
+  createdAt         DateTime          @default(now())
+  org               Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace   @relation(fields: [clientWorkspaceId], references: [id], onDelete: Cascade)
+  project           QuestionnaireProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  questionItem      QuestionItem      @relation(fields: [questionItemId], references: [id], onDelete: Cascade)
+  actor             User?             @relation("ApprovalEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+  @@index([projectId])
+  @@index([questionItemId])
+}
+
+model GapItem {
+  id                String          @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String
+  projectId         String
+  questionItemId    String
+  reason            String
+  suggestedMissingArtifact String?
+  status            GapStatus       @default(OPEN)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  org               Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace @relation(fields: [clientWorkspaceId], references: [id], onDelete: Cascade)
+  project           QuestionnaireProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  questionItem      QuestionItem    @relation(fields: [questionItemId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, questionItemId, reason])
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+  @@index([projectId])
+}
+
+model OpenAIUsageEvent {
+  id                String          @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String?
+  projectId         String?
+  model             String
+  inputTokens       Int             @default(0)
+  outputTokens      Int             @default(0)
+  costEstimateUsd   Float           @default(0)
+  metadata          Json?
+  createdAt         DateTime        @default(now())
+  org               Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace? @relation(fields: [clientWorkspaceId], references: [id], onDelete: SetNull)
+  project           QuestionnaireProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+model JobRun {
+  id                String          @id @default(cuid())
+  orgId             String
+  clientWorkspaceId String?
+  projectId         String?
+  jobType           JobRunType
+  status            JobRunStatus    @default(QUEUED)
+  idempotencyKey    String          @unique
+  queueJobId        String?
+  progress          Int             @default(0)
+  attempts          Int             @default(0)
+  errorJson         Json?
+  metadata          Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  completedAt       DateTime?
+  org               Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientWorkspace   ClientWorkspace? @relation(fields: [clientWorkspaceId], references: [id], onDelete: SetNull)
+  project           QuestionnaireProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([clientWorkspaceId])
+  @@index([projectId])
+  @@index([jobType])
+  @@index([status])
+}

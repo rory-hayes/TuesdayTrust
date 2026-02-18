@@ -1,0 +1,31 @@
+{
+  "name": "@evidenceq/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@evidenceq/database": "workspace:*",
+    "@evidenceq/shared": "workspace:*",
+    "@evidenceq/storage": "workspace:*",
+    "@sentry/node": "^10.20.0",
+    "@fastify/cors": "^11.1.0",
+    "bullmq": "^5.61.2",
+    "fastify": "^5.4.0",
+    "fastify-plugin": "^5.0.1",
+    "ioredis": "5.9.2",
+    "jose": "^6.0.8",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  }
+}

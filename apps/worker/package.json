@@ -1,24 +1,31 @@
 {
-  "name": "@tuesdaytrust/worker",
+  "name": "@evidenceq/worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "lint": "eslint src --max-warnings=0",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "test": "vitest run --config vitest.config.ts",
-    "test:coverage": "vitest run --config vitest.config.ts --coverage",
+    "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.1",
-    "@tuesdaytrust/shared": "workspace:*",
-    "docx": "8.5.0",
-    "mammoth": "^1.6.0",
-    "pdfjs-dist": "^4.10.38",
-    "pdfkit": "^0.15.0",
-    "pino": "^9.2.0",
+    "@evidenceq/database": "workspace:*",
+    "@evidenceq/shared": "workspace:*",
+    "@evidenceq/storage": "workspace:*",
+    "@sentry/node": "^10.20.0",
+    "bullmq": "^5.61.2",
+    "ioredis": "5.9.2",
+    "mammoth": "^1.11.0",
+    "openai": "^5.12.2",
+    "pdfjs-dist": "^5.4.394",
+    "pino": "^9.13.1",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
   }
 }

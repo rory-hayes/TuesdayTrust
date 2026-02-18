@@ -1,0 +1,40 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - paragraph [ref=e5]: EvidenceQ
+        - paragraph [ref=e6]: Consultant workspace
+      - navigation [ref=e7]:
+        - link "Clients" [ref=e8] [cursor=pointer]:
+          - /url: /clients
+          - generic [ref=e9]: Clients
+        - link "Project Workspace MVP" [ref=e10] [cursor=pointer]:
+          - /url: /projects/project-001
+          - generic [ref=e11]: Project Workspace
+          - generic [ref=e12]: MVP
+        - link "Account" [ref=e13] [cursor=pointer]:
+          - /url: /account
+          - generic [ref=e14]: Account
+    - generic [ref=e15]:
+      - banner [ref=e16]:
+        - generic [ref=e18]:
+          - 'heading "Project: project-001" [level=1] [ref=e19]'
+          - paragraph [ref=e20]: Loading project workspace...
+      - main [ref=e21]:
+        - generic [ref=e22]: NEXT_PUBLIC_API_URL is not configured. Set it to the deployed API base URL (for example https://<render-api>.onrender.com).
+        - generic [ref=e23]:
+          - generic [ref=e24]: Unanswered 0
+          - generic [ref=e25]: Ready 0
+          - generic [ref=e26]: Needs Review 0
+          - generic [ref=e27]: Insufficient 0
+          - generic [ref=e28]: Approved 0
+        - generic [ref=e29]:
+          - button "Generate Unanswered" [ref=e30] [cursor=pointer]
+          - button "Generate All" [ref=e31] [cursor=pointer]
+          - button "Approve All Ready" [ref=e32] [cursor=pointer]
+          - button "Export XLSX" [ref=e33] [cursor=pointer]
+          - button "View Gaps (0)" [ref=e34] [cursor=pointer]
+        - generic [ref=e35]:
+          - heading "No project questions yet" [level=3] [ref=e36]
+          - paragraph [ref=e37]: Map columns and parse the XLSX to create question rows.
+  - alert [ref=e38]

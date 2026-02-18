@@ -1,0 +1,97 @@
+services:
+  - type: web
+    name: evidenceq-api
+    repo: https://github.com/rory-hayes/TuesdayTrust
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @evidenceq/database db:generate && pnpm --filter @evidenceq/api build
+    startCommand: corepack enable && pnpm --filter @evidenceq/api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: evidenceq-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromDatabase:
+          name: evidenceq-redis
+          property: connectionString
+      - key: DEV_AUTH_ENABLED
+        value: "false"
+      - key: BLOB_READ_WRITE_TOKEN
+        sync: false
+      - key: CLERK_JWT_ISSUER
+        sync: false
+      - key: CLERK_JWT_AUDIENCE
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: POSTHOG_KEY
+        sync: false
+      - key: POSTHOG_HOST
+        value: https://us.i.posthog.com
+      - key: ORG_OPENAI_BUDGET_USD
+        value: "50"
+      - key: OPENAI_BILLING_PERIOD_DAYS
+        value: "30"
+
+  - type: worker
+    name: evidenceq-worker
+    repo: https://github.com/rory-hayes/TuesdayTrust
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @evidenceq/database db:generate && pnpm --filter @evidenceq/worker build
+    startCommand: corepack enable && pnpm --filter @evidenceq/worker start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: evidenceq-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromDatabase:
+          name: evidenceq-redis
+          property: connectionString
+      - key: BLOB_READ_WRITE_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: OPENAI_ANSWER_MODEL
+        value: gpt-4o-mini
+      - key: ORG_OPENAI_BUDGET_USD
+        value: "50"
+      - key: ORG_OPENAI_CONCURRENCY_LIMIT
+        value: "2"
+      - key: OPENAI_BILLING_PERIOD_DAYS
+        value: "30"
+      - key: RETENTION_PURGE_INTERVAL_MINUTES
+        value: "1440"
+      - key: SENTRY_DSN
+        sync: false
+      - key: POSTHOG_KEY
+        sync: false
+      - key: POSTHOG_HOST
+        value: https://us.i.posthog.com
+
+databases:
+  - name: evidenceq-postgres
+    databaseName: evidenceq
+    user: evidenceq
+    plan: free
+    postgresMajorVersion: "15"
+    ipAllowList: []
+
+  - name: evidenceq-redis
+    plan: free
+    ipAllowList: []

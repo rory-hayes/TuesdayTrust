@@ -1,0 +1,56 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - paragraph [ref=e5]: EvidenceQ
+        - paragraph [ref=e6]: Consultant workspace
+      - navigation [ref=e7]:
+        - link "Clients" [ref=e8] [cursor=pointer]:
+          - /url: /clients
+          - generic [ref=e9]: Clients
+        - link "Project Workspace MVP" [ref=e10] [cursor=pointer]:
+          - /url: /projects/project-001
+          - generic [ref=e11]: Project Workspace
+          - generic [ref=e12]: MVP
+        - link "Account" [ref=e13] [cursor=pointer]:
+          - /url: /account
+          - generic [ref=e14]: Account
+    - generic [ref=e15]:
+      - banner [ref=e16]:
+        - generic [ref=e18]:
+          - heading "Account" [level=1] [ref=e19]
+          - paragraph [ref=e20]: Account settings unavailable
+      - main [ref=e21]:
+        - generic [ref=e22]: NEXT_PUBLIC_API_URL is not configured. Set it to the deployed API base URL (for example https://<render-api>.onrender.com).
+        - generic [ref=e23]:
+          - generic [ref=e24]:
+            - generic [ref=e25]:
+              - heading "Team" [level=2] [ref=e26]
+              - generic [ref=e27]: Loading
+            - paragraph [ref=e28]: Team management remains minimal in MVP. Org role controls destructive actions.
+          - generic [ref=e29]:
+            - generic [ref=e30]:
+              - heading "Data Retention / Purge" [level=2] [ref=e31]
+              - generic [ref=e32]: Baseline
+            - paragraph [ref=e33]: Retention defaults to 90 days. Purge removes expired Blob objects and DB references.
+            - generic [ref=e34]:
+              - generic [ref=e35]:
+                - text: Retention Days
+                - spinbutton "Retention Days" [disabled] [ref=e36]: "90"
+              - generic [ref=e37]:
+                - button "Save Retention" [disabled] [ref=e38]
+                - button "Run Purge Now" [disabled] [ref=e39]
+              - paragraph [ref=e40]: Admin role required for retention updates and purge actions.
+        - generic [ref=e41]:
+          - heading "Optional Integrations (Scaffolded)" [level=2] [ref=e42]
+          - paragraph [ref=e43]: Enabled only when matching environment variables are configured.
+          - generic [ref=e44]:
+            - generic [ref=e45]: "Clerk: Off"
+            - generic [ref=e46]: "Stripe: Off"
+            - generic [ref=e47]: "PostHog: Off"
+            - generic [ref=e48]: "Sentry: Off"
+            - generic [ref=e49]: "Resend: Off"
+        - generic [ref=e51]:
+          - heading "Billing not in MVP" [level=3] [ref=e52]
+          - paragraph [ref=e53]: Billing is intentionally out of MVP scope and will be added later.
+  - alert [ref=e54]

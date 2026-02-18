@@ -1,0 +1,38 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - paragraph [ref=e5]: EvidenceQ
+        - paragraph [ref=e6]: Consultant workspace
+      - navigation [ref=e7]:
+        - link "Clients" [ref=e8] [cursor=pointer]:
+          - /url: /clients
+          - generic [ref=e9]: Clients
+        - link "Project Workspace MVP" [ref=e10] [cursor=pointer]:
+          - /url: /projects/project-001
+          - generic [ref=e11]: Project Workspace
+          - generic [ref=e12]: MVP
+        - link "Account" [ref=e13] [cursor=pointer]:
+          - /url: /account
+          - generic [ref=e14]: Account
+    - generic [ref=e15]:
+      - banner [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]:
+            - 'heading "Client Workspace: client-001" [level=1] [ref=e19]'
+            - paragraph [ref=e20]: "KB docs: 0 • Questionnaires: 0"
+          - button "Delete Client" [ref=e22] [cursor=pointer]
+      - main [ref=e23]:
+        - generic [ref=e24]: NEXT_PUBLIC_API_URL is not configured. Set it to the deployed API base URL (for example https://<render-api>.onrender.com).
+        - generic [ref=e25]:
+          - button "KB Vault" [ref=e26] [cursor=pointer]
+          - button "Questionnaires" [ref=e27] [cursor=pointer]
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - heading "Upload KB Document" [level=2] [ref=e30]
+            - paragraph [ref=e31]: "Supported: PDF, DOCX, TXT, MD. Uploaded to Vercel Blob and indexed by background worker."
+            - button "Choose File" [ref=e33]
+          - generic [ref=e34]:
+            - heading "KB Vault empty" [level=3] [ref=e35]
+            - paragraph [ref=e36]: No knowledge-base documents uploaded yet.
+  - alert [ref=e37]

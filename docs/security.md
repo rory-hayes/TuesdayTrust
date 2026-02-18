@@ -1,123 +1,70 @@
-# TuesdayTrust — Security
+# EvidenceQ Security Baseline (Alpha)
 
-TuesdayTrust is a trust product. Security posture is not optional.
+This document reflects implemented baseline controls. It is not a certification statement and does not claim ISO/SOC2 compliance.
 
----
+## Scope
+- Product: EvidenceQ consultant-mode questionnaire workflow.
+- Data classes: uploaded KB documents, questionnaire files, generated drafts, citations, exports, and audit metadata.
 
-## 1) Security Principles
-- Least privilege everywhere.
-- Multi-tenant isolation via RLS and org-scoped queries.
-- Human-in-the-loop governance: no silent changes.
-- Auditability for all state changes and exports.
-- Explicit retention and deletion controls.
-- No training on customer data; no data leakage through prompts.
+## Core Controls
 
----
+### 1) Authentication and Authorization
+- API requires bearer auth for all protected routes.
+- Clerk JWT verification is used when Clerk env vars are configured.
+- Dev auth fallback is allowed only when:
+  - `NODE_ENV=development`
+  - `DEV_AUTH_ENABLED=true`
+- Authorization checks enforce org scoping and resource ownership checks for:
+  - org membership
+  - client workspace access
+  - project access
+- Destructive operations are admin-only (owner role baseline).
 
-## 2) Threat Model (high-level)
-### Primary threats
-- Cross-tenant data exposure (RLS failure, query bug)
-- Leaked uploads (misconfigured buckets, signed URL misuse)
-- Prompt injection / data exfiltration via LLM calls
-- Unauthorized exports or evidence sharing
-- Abuse of the system as a generic AI API
-- Token/cost blowups (DoS via large uploads)
+### 2) Tenant Isolation
+- Multi-tenant data is scoped by `orgId`.
+- Client and project data also include `clientWorkspaceId` / `projectId`.
+- Retrieval and generation paths include explicit org/client filters.
 
-### Required mitigations
-- Strict RLS policies + server-side checks.
-- Private storage buckets; signed URLs short TTL.
-- Input sanitization; never pass untrusted portal content to privileged tools.
-- Hard limits: file size, question count, per-tenant budgets.
-- Audit logs for exports and answer changes.
-- Secrets management (Supabase secrets / env vars); never in client.
+### 3) File Storage and Access
+- Production file storage is Vercel Blob behind storage abstraction.
+- Blob uploads use randomized object naming (`addRandomSuffix: true`).
+- UI does not expose direct Blob URLs.
+- File download path is proxied and authenticated:
+  - `GET /v1/files/:fileId/download`
+- Local dev fallback uses local disk storage only when Blob token is absent and environment is non-production.
 
----
+### 4) Data Retention and Deletion
+- Org retention baseline (`retentionDays`) defaults to 90 days.
+- Worker includes scheduled retention purge.
+- Manual purge can be queued by admin from account settings.
+- Client workspace deletion removes associated files and DB records.
 
-## 3) Data Classification
-- STANDARD: typical questionnaire content
-- SENSITIVE: architecture/security posture details
-- RESTRICTED: credentials, secrets (should be blocked)
+### 5) Auditability
+- Audit logs capture key lifecycle actions:
+  - uploads
+  - indexing completion/failure
+  - answer generation enqueue/completion
+  - approvals/rejections/edits
+  - exports
+  - deletion/purge actions
 
-Rules:
-- Detect and block obvious secrets in uploads where possible.
-- Provide tenant controls to mark answers/evidence as sensitive/restricted.
+### 6) LLM Safety and Cost Guardrails
+- OpenAI calls run in worker only.
+- Usage events are recorded with token/cost estimates.
+- Org budget cap blocks new generation when exceeded.
+- Per-org concurrency limits reduce runaway generation load.
+- Approved answers are never overwritten unless force is explicitly requested internally.
 
----
+### 7) Export Safety
+- XLSX export sanitizes formula-leading values (`=`, `+`, `-`, `@`) to reduce formula injection risk.
+- Evidence output is deterministic and citation-formatted.
 
-## 4) Authentication and Authorization
-- Supabase Auth for users.
-- Roles: Admin, Editor, Reviewer, Viewer (see PRD).
-- RLS is the enforcement layer; APIs must still validate membership.
- - Org invites are token-based with expiry; accept requires an authenticated session and email match when available.
- - When SSO is enabled and a domain is configured, API access enforces email domain matching for org-scoped routes.
+### 8) Observability
+- Structured logging is enabled in API and worker.
+- Optional Sentry capture for web/api/worker when DSN env vars are set.
+- Optional PostHog event emission is env-gated.
 
-Permission highlights:
-- Only Reviewer/Admin can approve answers and merge duplicates.
-- Only Admin can change retention policies and billing settings.
-- Export permission is policy-controlled and logged.
-
-### Role matrix (current enforcement)
-- Admin: all actions.
-- Editor: upload questionnaires, create/edit draft answers, Live Question Mode.
-- Reviewer: approve/merge answers, requeue jobs, Live Question Mode.
-- Viewer: read-only access; no write actions.
-
-### Trust Center sharing
-- Share links are token-based, revocable, and expiring.
-- Public access is limited to the shared snapshot only.
-- Evidence exposed via share links must be marked `shareable`.
-- Allowlists must explicitly control which answers/evidence are visible publicly.
-- Access requests are logged and require Admin approval before expanding exposure.
-
----
-
-## 5) Storage Security
-- Supabase Storage buckets are private.
-- Upload flow uses signed URLs.
-- URLs expire quickly (e.g., 5–15 minutes for upload; 1 hour for export download).
-- Object paths include org_id and questionnaire_id.
-- Virus scanning is recommended (phase 2+), at minimum content-type validation.
-
----
-
-## 6) Retention and Deletion
-Defaults:
-- Raw uploads auto-delete after 30 days (configurable).
-- Export files retained 90 days (configurable).
-- Structured data (questions, mappings, answers) retained until tenant deletes workspace.
-
-Requirements:
-- Workspace delete must cascade and remove storage objects.
-- Users can request full org deletion.
-
----
-
-## 7) OpenAI / AI Safety Controls
-- Use OpenAI in “select-from-candidates” mode only.
-- Do not send restricted/secrets content to OpenAI.
-- Strip irrelevant text and only send minimal question + candidate answers.
-- Never include other tenants’ content in prompts.
-
-Logging:
-- Store token usage and request ids (no raw prompt content by default).
-- Provide opt-in debug mode for prompt retention (enterprise only).
-
----
-
-## 8) Audit Logging Requirements
-Audit events MUST be produced for:
-- Answer create/edit/approve/deprecate/merge
-- Evidence create/link/unlink
-- Questionnaire upload, processing start/end, export
-- User role changes
-- Retention policy changes
-- Job requeue/cancel
-
-Audit payload must include sufficient context for forensic review.
-
----
-
-## 9) Security Roadmap (credibility)
-- Phase 1: baseline controls above + good hygiene.
-- Phase 2: SSO/RBAC enhancements, malware scanning, DPA template.
-- Phase 3: pursue SOC2 Type I if needed for enterprise expansion.
+## Explicit Non-Claims
+- No claim of ISO 27001 or SOC 2 certification.
+- No multi-region resilience guarantee.
+- No trust center publication feature in MVP.
