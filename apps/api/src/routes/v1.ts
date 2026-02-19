@@ -98,6 +98,11 @@ function normalizeIncomingBlobPathname(blobPathname?: string | null, blobUrl?: s
   return '';
 }
 
+function isFullBlobLocator(locator: string): boolean {
+  const normalized = locator.replace(/^https?:\/\//, '').trim();
+  return /^[^/]+\.[^/]+\/.+/.test(normalized);
+}
+
 function toSafeDocument(document: {
   id: string;
   filename: string;
@@ -895,9 +900,18 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     }
 
     const blobPathname = normalizeIncomingBlobPathname(body.blobPathname, body.blobUrl);
+    const usesBlobStorage = app.services.storage.kind === 'blob';
 
     if (!blobPathname || !body.filename || !body.mimeType || !Number.isFinite(body.sizeBytes)) {
       return fail(reply, 400, 'blobPathname (or blobUrl), filename, mimeType, sizeBytes are required');
+    }
+
+    if (usesBlobStorage && !body.blobUrl && !isFullBlobLocator(blobPathname)) {
+      return fail(
+        reply,
+        400,
+        'For Blob storage, provide blobUrl or a full blobPathname in <host>/<path> format.'
+      );
     }
 
     const document = await app.services.prisma.kBDocument.create({
@@ -1096,9 +1110,18 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     const name = body.name?.trim();
 
     const blobPathname = normalizeIncomingBlobPathname(body.blobPathname, body.blobUrl);
+    const usesBlobStorage = app.services.storage.kind === 'blob';
 
     if (!name || !blobPathname || !body.filename || !isXlsxFilename(body.filename)) {
       return fail(reply, 400, 'name, blobPathname (or blobUrl), and .xlsx filename are required');
+    }
+
+    if (usesBlobStorage && !body.blobUrl && !isFullBlobLocator(blobPathname)) {
+      return fail(
+        reply,
+        400,
+        'For Blob storage, provide blobUrl or a full blobPathname in <host>/<path> format.'
+      );
     }
 
     const project = await app.services.prisma.questionnaireProject.create({
