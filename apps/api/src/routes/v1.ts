@@ -157,6 +157,11 @@ function hashKbVersion(parts: string[]): string {
   return createHash('sha256').update(parts.join('|')).digest('hex');
 }
 
+function toQueueJobId(idempotencyKey: string): string {
+  const digest = createHash('sha256').update(idempotencyKey).digest('hex');
+  return `id-${digest}`;
+}
+
 async function getKbVersionHash(prisma: PrismaClient, orgId: string, clientWorkspaceId: string): Promise<string> {
   const docs = await prisma.kBDocument.findMany({
     where: {
@@ -735,7 +740,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
         dryRun: Boolean(body.dryRun)
       },
       {
-        jobId: idempotencyKey
+        jobId: toQueueJobId(idempotencyKey)
       }
     );
 
@@ -922,7 +927,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
 
     const idempotencyKey = `kb-index:${document.id}:v${document.indexVersion}`;
     const job = await app.services.queues.kbIndex.add(idempotencyKey, payload, {
-      jobId: idempotencyKey
+      jobId: toQueueJobId(idempotencyKey)
     });
 
     await trackJobRun(app.services.prisma, {
@@ -1338,7 +1343,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
 
       const idempotencyKey = `project-parse:${project.id}:${body.sheetName}:${body.headerRowIndex}:${body.questionCol}:${body.answerCol}:${body.evidenceCol}`;
       const job = await app.services.queues.projectParse.add(idempotencyKey, payload, {
-        jobId: idempotencyKey
+        jobId: toQueueJobId(idempotencyKey)
       });
 
       await trackJobRun(app.services.prisma, {
@@ -1545,7 +1550,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
 
       const idempotencyKey = `answer-generate:${project.id}:${questionId}:${kbVersionHash}`;
       const job = await app.services.queues.answerGenerate.add(idempotencyKey, payload, {
-        jobId: idempotencyKey
+        jobId: toQueueJobId(idempotencyKey)
       });
       jobs.push(job);
 
@@ -2093,7 +2098,7 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     }
 
     const job = await app.services.queues.exportXlsx.add(idempotencyKey, payload, {
-      jobId: idempotencyKey
+      jobId: toQueueJobId(idempotencyKey)
     });
 
     await app.services.prisma.questionnaireProject.update({
