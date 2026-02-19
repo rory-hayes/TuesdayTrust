@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@evidenceq/database';
+import { verifyToken } from '@clerk/backend';
 import fp from 'fastify-plugin';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
@@ -67,16 +68,25 @@ function parseOrgId(payload: JWTPayload): string | undefined {
     return custom;
   }
 
+  const orgClaim = payload['organization_id'];
+
+  if (typeof orgClaim === 'string' && orgClaim.length > 0) {
+    return orgClaim;
+  }
+
   return undefined;
 }
 
 const authPlugin: FastifyPluginAsync = async (app) => {
   const issuer = process.env.CLERK_JWT_ISSUER?.trim();
   const audience = process.env.CLERK_JWT_AUDIENCE?.trim();
-  const isClerkConfigured = Boolean(issuer);
+  const clerkSecretKey = process.env.CLERK_SECRET_KEY?.trim();
+  const isClerkConfigured = Boolean(issuer || clerkSecretKey);
   const isDevAuthEnabled =
     process.env.NODE_ENV === 'development' && process.env.DEV_AUTH_ENABLED === 'true';
-  const jwks = issuer ? createRemoteJWKSet(new URL(`${issuer.replace(/\/$/, '')}/.well-known/jwks.json`)) : null;
+  const jwks = issuer
+    ? createRemoteJWKSet(new URL(`${issuer.replace(/\/$/, '')}/.well-known/jwks.json`))
+    : null;
 
   app.addHook('onRequest', async (request, reply) => {
     const requestUrl = request.raw.url ?? request.url;
@@ -122,46 +132,55 @@ const authPlugin: FastifyPluginAsync = async (app) => {
       return;
     }
 
-    if (!jwks || !issuer) {
-      reply.code(500);
-      throw new Error('Clerk auth is misconfigured');
-    }
-
     try {
-      const verifyOptions: {
-        issuer: string;
-        audience?: string;
-      } = {
-        issuer
-      };
+      let payload: JWTPayload;
 
-      if (audience) {
-        verifyOptions.audience = audience;
+      // Prefer issuer/JWKS verification when available.
+      if (jwks && issuer) {
+        const verifyOptions: {
+          issuer: string;
+          audience?: string;
+        } = {
+          issuer
+        };
+
+        if (audience) {
+          verifyOptions.audience = audience;
+        }
+
+        const verification = await jwtVerify(token, jwks, {
+          ...verifyOptions
+        });
+
+        payload = verification.payload;
+      } else if (clerkSecretKey) {
+        const verifiedPayload = await verifyToken(token, {
+          secretKey: clerkSecretKey,
+          ...(audience ? { audience } : {})
+        });
+
+        payload = verifiedPayload as JWTPayload;
+      } else {
+        reply.code(500);
+        throw new Error('Clerk auth is misconfigured');
       }
 
-      const verification = await jwtVerify(token, jwks, {
-        ...verifyOptions
-      });
-
-      const orgId = parseOrgId(verification.payload);
-
-      if (!orgId) {
-        reply.code(401);
-        throw new Error('Token does not include org_id claim');
-      }
-
-      if (!verification.payload.sub) {
+      if (!payload.sub) {
         reply.code(401);
         throw new Error('Token does not include subject claim');
       }
 
+      const orgId =
+        parseOrgId(payload) ??
+        `org_user_${toSlug(payload.sub) || payload.sub}`;
+
       request.auth = {
         orgId,
-        userId: verification.payload.sub,
+        userId: payload.sub,
         email:
-          typeof verification.payload.email === 'string'
-            ? verification.payload.email
-            : `${verification.payload.sub}@clerk.local`,
+          typeof payload.email === 'string'
+            ? payload.email
+            : `${payload.sub}@clerk.local`,
         authMode: 'clerk'
       };
 

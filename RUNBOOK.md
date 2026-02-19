@@ -35,6 +35,15 @@
 - `POSTHOG_KEY` - enables server-side product event capture (`client_created`, `kb_uploaded`, `kb_index_ready`, `project_created`, `project_mapped`, `answers_generated`, `export_created`)
 - `POSTHOG_HOST` - optional PostHog host override (default `https://us.i.posthog.com`)
 
+### Clerk authentication
+- Web (`apps/web`):
+  - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+  - `CLERK_SECRET_KEY`
+- API (`apps/api`):
+  - `CLERK_SECRET_KEY`
+  - `CLERK_JWT_ISSUER`
+  - `CLERK_JWT_AUDIENCE` (optional)
+
 ## Web upload token route
 - Path: `POST /api/blob/upload-token`
 - File: `/Users/rory/TuesdayTrust/apps/web/src/app/api/blob/upload-token/route.ts`
@@ -47,7 +56,10 @@
      - `POST /v1/clients/:clientId/projects`
 
 ## Auth mode behavior
-- Clerk mode (if configured): API validates bearer JWT using Clerk JWKS (`CLERK_JWT_ISSUER` and optional `CLERK_JWT_AUDIENCE`).
+- Clerk mode (if configured):
+  - Web wraps app with `ClerkProvider` and forwards bearer tokens to API requests.
+  - API validates bearer JWT using Clerk JWKS (`CLERK_JWT_ISSUER` and optional `CLERK_JWT_AUDIENCE`).
+  - If org claim is absent in a valid Clerk token, API falls back to a per-user org key (`org_user_<userId>`).
 - Dev mode (local only): enabled only when `NODE_ENV=development` **and** `DEV_AUTH_ENABLED=true`.
 - Dev requests use `Authorization: Bearer dev` with `x-org-id` and `x-user-id` headers.
 

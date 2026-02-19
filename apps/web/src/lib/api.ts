@@ -1,10 +1,27 @@
-const CONFIGURED_API_URL = process.env.NEXT_PUBLIC_API_URL?.trim() ?? '';
+function normalizeApiUrl(value: string | undefined): string {
+  if (!value) {
+    return '';
+  }
+
+  return value
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/\\[nr]/g, '')
+    .replace(/\s+/g, '')
+    .replace(/\/+$/, '');
+}
+
+const CONFIGURED_API_URL = normalizeApiUrl(process.env.NEXT_PUBLIC_API_URL);
 const API_URL =
   process.env.NODE_ENV === 'development' ? CONFIGURED_API_URL || 'http://localhost:4000' : CONFIGURED_API_URL;
 const DEV_TOKEN = process.env.NEXT_PUBLIC_DEV_AUTH_TOKEN ?? 'dev';
 const DEV_ORG_ID = process.env.NEXT_PUBLIC_DEV_ORG_ID ?? 'org_dev';
 const DEV_USER_ID = process.env.NEXT_PUBLIC_DEV_USER_ID ?? 'user_dev';
 const DEV_USER_EMAIL = process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? 'dev-consultant@example.com';
+
+type ApiAuthTokenGetter = () => Promise<string | null>;
+
+let apiAuthTokenGetter: ApiAuthTokenGetter | null = null;
 
 type RequestOptions = {
   method?: string;
@@ -18,10 +35,18 @@ function requireApiUrl(): string {
     );
   }
 
-  return API_URL.replace(/\/$/, '');
+  if (!/^https?:\/\//.test(API_URL)) {
+    throw new Error('NEXT_PUBLIC_API_URL is invalid. Expected a full URL beginning with http:// or https://.');
+  }
+
+  return API_URL;
 }
 
-function buildAuthHeaders(): HeadersInit {
+export function setApiAuthTokenGetter(getter: ApiAuthTokenGetter | null) {
+  apiAuthTokenGetter = getter;
+}
+
+async function buildAuthHeaders(): Promise<HeadersInit> {
   const headers: Record<string, string> = {
     'content-type': 'application/json'
   };
@@ -33,13 +58,22 @@ function buildAuthHeaders(): HeadersInit {
     headers['x-user-email'] = DEV_USER_EMAIL;
   }
 
+  if (process.env.NODE_ENV !== 'development' && apiAuthTokenGetter) {
+    const token = await apiAuthTokenGetter();
+
+    if (token) {
+      headers.authorization = `Bearer ${token}`;
+    }
+  }
+
   return headers;
 }
 
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const headers = await buildAuthHeaders();
   const requestInit: RequestInit = {
     method: options.method ?? 'GET',
-    headers: buildAuthHeaders(),
+    headers,
     cache: 'no-store'
   };
 
@@ -69,7 +103,8 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
     }
 
     if (response.status === 401) {
-      message = 'Authentication required. Configure Clerk auth for both web and API deployments.';
+      message =
+        'Authentication required. Sign in with Clerk and configure Clerk auth for both web and API deployments.';
     }
 
     throw new Error(message);
@@ -442,9 +477,10 @@ export function runRetentionPurge(dryRun = false) {
 }
 
 export async function downloadFile(fileId: string, filename?: string) {
+  const headers = await buildAuthHeaders();
   const response = await fetch(`${requireApiUrl()}/v1/files/${fileId}/download`, {
     method: 'GET',
-    headers: buildAuthHeaders(),
+    headers,
     cache: 'no-store'
   });
 
