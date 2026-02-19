@@ -1,6 +1,20 @@
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
+import { auth } from '@clerk/nextjs/server';
 
 export async function POST(request: Request): Promise<Response> {
+  const { userId } = await auth();
+
+  if (!userId) {
+    return Response.json(
+      {
+        error: 'Authentication required'
+      },
+      {
+        status: 401
+      }
+    );
+  }
+
   const body = (await request.json()) as HandleUploadBody;
   const token = process.env.BLOB_READ_WRITE_TOKEN;
 

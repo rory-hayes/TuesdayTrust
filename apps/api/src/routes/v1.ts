@@ -1438,6 +1438,30 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
       return fail(reply, 400, 'mode must be ALL or UNANSWERED');
     }
 
+    if (!process.env.OPENAI_API_KEY?.trim()) {
+      return fail(
+        reply,
+        503,
+        'Answer generation is unavailable because OPENAI_API_KEY is not configured in the worker/runtime environment.'
+      );
+    }
+
+    const readyKbDocCount = await app.services.prisma.kBDocument.count({
+      where: {
+        orgId: request.auth.orgId,
+        clientWorkspaceId: project.clientWorkspaceId,
+        status: 'READY'
+      }
+    });
+
+    if (readyKbDocCount === 0) {
+      return fail(
+        reply,
+        409,
+        'No READY KB documents are available for this client. Upload and index KB documents before generating answers.'
+      );
+    }
+
     const budgetCheck = await isOpenAIBudgetExceeded(app.services.prisma, request.auth.orgId);
 
     if (budgetCheck.exceeded) {

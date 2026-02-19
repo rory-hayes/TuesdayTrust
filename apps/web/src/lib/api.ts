@@ -18,6 +18,8 @@ const DEV_TOKEN = process.env.NEXT_PUBLIC_DEV_AUTH_TOKEN ?? 'dev';
 const DEV_ORG_ID = process.env.NEXT_PUBLIC_DEV_ORG_ID ?? 'org_dev';
 const DEV_USER_ID = process.env.NEXT_PUBLIC_DEV_USER_ID ?? 'user_dev';
 const DEV_USER_EMAIL = process.env.NEXT_PUBLIC_DEV_USER_EMAIL ?? 'dev-consultant@example.com';
+const AUTH_WAIT_INTERVAL_MS = 100;
+const AUTH_WAIT_MAX_ATTEMPTS = 20;
 
 type ApiAuthTokenGetter = () => Promise<string | null>;
 
@@ -27,6 +29,28 @@ type RequestOptions = {
   method?: string;
   body?: unknown;
 };
+
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+async function waitForApiAuthTokenGetter(): Promise<ApiAuthTokenGetter | null> {
+  if (process.env.NODE_ENV === 'development') {
+    return null;
+  }
+
+  for (let attempt = 0; attempt < AUTH_WAIT_MAX_ATTEMPTS; attempt += 1) {
+    if (apiAuthTokenGetter) {
+      return apiAuthTokenGetter;
+    }
+
+    await sleep(AUTH_WAIT_INTERVAL_MS);
+  }
+
+  return apiAuthTokenGetter;
+}
 
 function requireApiUrl(): string {
   if (!API_URL) {
@@ -58,8 +82,9 @@ async function buildAuthHeaders(): Promise<HeadersInit> {
     headers['x-user-email'] = DEV_USER_EMAIL;
   }
 
-  if (process.env.NODE_ENV !== 'development' && apiAuthTokenGetter) {
-    const token = await apiAuthTokenGetter();
+  if (process.env.NODE_ENV !== 'development') {
+    const tokenGetter = await waitForApiAuthTokenGetter();
+    const token = tokenGetter ? await tokenGetter() : null;
 
     if (token) {
       headers.authorization = `Bearer ${token}`;

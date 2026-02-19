@@ -6,7 +6,7 @@ export type IntegrationStatus = {
 export const integrationStatus: IntegrationStatus[] = [
   {
     name: 'Clerk',
-    enabled: Boolean(process.env.CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY)
+    enabled: Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY)
   },
   {
     name: 'Stripe',
