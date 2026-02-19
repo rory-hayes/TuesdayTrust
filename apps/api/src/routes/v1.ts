@@ -862,10 +862,11 @@ export async function registerV1Routes(app: FastifyInstance): Promise<void> {
     await app.services.prisma.auditLog.create({
       data: {
         orgId: request.auth.orgId,
-        clientWorkspaceId: client.id,
+        clientWorkspaceId: null,
         actorUserId: request.auth.userId,
         action: 'client_workspace_deleted',
         metadata: {
+          deletedClientWorkspaceId: client.id,
           deletedBlobCount: blobLocators.length
         }
       }
