@@ -42,6 +42,12 @@ async function ensureOrgAndUser(prisma: PrismaClient, auth: { orgId: string; use
     }
   });
 
+  const existingOrgMemberCount = await prisma.user.count({
+    where: {
+      orgId: auth.orgId
+    }
+  });
+
   await prisma.user.upsert({
     where: { id: auth.userId },
     update: {
@@ -50,6 +56,7 @@ async function ensureOrgAndUser(prisma: PrismaClient, auth: { orgId: string; use
     create: {
       id: auth.userId,
       orgId: auth.orgId,
+      role: existingOrgMemberCount === 0 ? 'OWNER' : 'CONSULTANT',
       email: auth.email ?? `${auth.userId}@local.dev`
     }
   });
